@@ -13,26 +13,13 @@ const (
 )
 
 type GObj struct {
-	Type_    GType
-	Val_     GVal
-	refCount int //延用引用计数
-}
-
-func (o *GObj) IncrRefCount() {
-	o.refCount++
-}
-
-func (o *GObj) DecrRefCount() {
-	o.refCount--
-	if o.refCount == 0 {
-		o.Val_ = nil //交给GC
-	}
+	Type_ GType
+	Val_  GVal
 }
 
 func NewObject(tp GType, val any) *GObj {
 	return &GObj{
-		Type_:    tp,
-		Val_:     val,
-		refCount: 1,
+		Type_: tp,
+		Val_:  val,
 	}
 }

@@ -11,7 +11,8 @@ const (
 	PORT = ":8888"
 )
 
-var server *GedisServer
+// globally unique
+var server GedisServer
 
 func InitServer() error {
 	l, err := net.Listen("tcp", PORT)
@@ -22,6 +23,8 @@ func InitServer() error {
 	if !ok {
 		return errors.New("listener is not tcp")
 	}
+	server.clients = make(map[int]*GedisClient)
+	//TODO: init gedis db
 	server.listener = tcpListener
 	server.aeloop = NewAeEventLoop()
 	return nil

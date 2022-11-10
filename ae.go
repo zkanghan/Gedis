@@ -31,8 +31,13 @@ func AcceptHandler() {
 	for {
 		conn, err := server.listener.Accept()
 		if err != nil {
+			opErr := err.(*net.OpError)
+			if opErr.Timeout() {
+				return
+			}
+			//  if not time out error
 			log.Println("accept error: ", err)
-			break
+			return
 		}
 		tcpConn, ok := conn.(*net.TCPConn)
 		if !ok { //不是tcp连接
@@ -48,12 +53,62 @@ func AcceptHandler() {
 
 // ReadQueryFromClient extra为需要读取的客户端
 var ReadQueryFromClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
-	//  TODO: 完成 resp 协议
+	client := extra.(*GedisClient)
+	//expand queryBuf's capacity if it is less than the max command capacity，
+	if len(client.queryBuf)-client.queryLen < GEDIS_MAX_CMD_BUF {
+		client.queryBuf = append(client.queryBuf, make([]byte, GEDIS_MAX_CMD_BUF)...)
+	}
+	// set read deadline with 5 ms
+	if err := conn.SetReadDeadline(time.Now().Add(time.Millisecond * 5)); err != nil {
+		log.Printf("client %v set read dead line error: %v\n", conn, err)
+		freeClient(client)
+		return
+	}
+
+	n, err := conn.Read(client.queryBuf[client.queryLen:])
+	if err != nil {
+		opErr := err.(*net.OpError)
+		if opErr.Timeout() { //expected read time out error
+			return
+		}
+		log.Printf("client %v read error: %v", conn, err)
+		freeClient(client)
+		return
+	}
+	client.queryLen += n
 
 }
 
 var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
 	// TODO: 执行对键值的随机检查
+}
+
+var SendReplyToClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
+	client := extra.(*GedisClient)
+	for client.reply.Length() > 0 {
+		rep := client.reply.First()
+		buf := []byte(rep.Val.Val_.(string))
+		bufLen := len(buf)
+		if client.sentLen < bufLen {
+			n, err := conn.Write(buf[client.sentLen:])
+			if err != nil {
+				log.Println("sent reply error: ", err)
+				freeClient(client)
+				return
+			}
+			client.sentLen += n
+			if client.sentLen == bufLen {
+				client.reply.DelNode(rep)
+				client.sentLen = 0
+			} else {
+				break
+			}
+		}
+	}
+	if client.reply.Length() == 0 { //finish write
+		client.sentLen = 0
+		loop.RemoveFileEvent(conn, AE_WRITABLE)
+	}
 }
 
 // AeFileEvent 文件事件处理Gedis与客户端的网络IO
@@ -128,11 +183,7 @@ func (loop *AeEventLoop) AddFileEvent(conn *net.TCPConn, mask FeType, proc FileP
 }
 
 func (loop *AeEventLoop) RemoveFileEvent(conn *net.TCPConn, mask FeType) {
-	err := conn.Close()
-	if err != nil {
-		log.Println("close connection error to remove file event: ", err)
-	}
-	loop.FileEvents[getFeKey(conn, mask)] = nil
+	delete(loop.FileEvents, getFeKey(conn, mask))
 }
 
 func GetTimeMs() int64 {
@@ -190,23 +241,15 @@ func (loop *AeEventLoop) nearestTime() int64 {
 
 // AeProcess 执行一次 Process函数 相当于一次处理循环
 func (loop *AeEventLoop) AeProcess() {
-	AcceptHandler() // 阻塞的监听网络连接
 
 	for _, fe := range loop.FileEvents { //先执行可读事件，因为可读事件可能会产生可写事件
-		if fe.mask == AE_READABLE {
-			fe.proc(loop, fe.connection, fe.extra)
-		}
-	}
-
-	for _, fe := range loop.FileEvents {
-		if fe.mask == AE_WRITABLE {
-			fe.proc(loop, fe.connection, fe.extra)
-		}
+		fe.proc(loop, fe.connection, fe.extra)
 	}
 
 	p := loop.TimeEventsHead
+	now := GetTimeMs()
 	for p != nil {
-		if p.when > GetTimeMs() { //时间事件已超时，触发运行
+		if p.when <= now { //时间事件已超时，触发运行
 			p.proc(loop, p.id, p.extra)
 			if p.mask == AE_ONCE {
 				loop.RemoveTimeEvent(p.id)
@@ -216,11 +259,11 @@ func (loop *AeEventLoop) AeProcess() {
 		}
 		p = p.next
 	}
-
 }
 
-func (loop *AeEventLoop) AeMain() {
+func (loop *AeEventLoop) AeMain(accept func()) {
 	for !loop.stopped {
+		accept() // 阻塞的监听网络连接
 		loop.AeProcess()
 	}
 }
