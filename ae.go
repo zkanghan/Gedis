@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// FeType 事件类型
+// FeType define the type of event
 type FeType int8
 type TeType int8
 
@@ -14,14 +14,14 @@ const (
 	AE_READABLE FeType = 1
 	AE_WRITABLE FeType = 2
 
-	AE_NORNAL TeType = 1 //普通时间事件
-	AE_ONCE   TeType = 2 // 只执行一次的时间时间
+	AE_NORNAL TeType = 1
+	AE_ONCE   TeType = 2
 )
 
 type FileProc func(loop *AeEventLoop, conn *net.TCPConn, extra any)
 type TimeProc func(loop *AeEventLoop, id int, extra any)
 
-// AcceptHandler 阻塞处理网络连接请求
+// AcceptHandler blocked to wait for connection
 func AcceptHandler() {
 	err := server.listener.SetDeadline(time.Now().Add(time.Millisecond * 12))
 	if err != nil {
@@ -35,7 +35,7 @@ func AcceptHandler() {
 			if opErr.Timeout() {
 				return
 			}
-			//  if not time out error
+			//  if isn't time out error
 			log.Println("accept error: ", err)
 			return
 		}
@@ -45,16 +45,16 @@ func AcceptHandler() {
 		}
 		client := NewClient(tcpConn)
 		server.clients[getConnFd(tcpConn)] = client
-		// 连接建立成功，事件可读，处理客户端请求
+		// the connection can be read
 		server.aeloop.AddFileEvent(tcpConn, AE_READABLE, ReadQueryFromClient, client)
 	}
 
 }
 
-// ReadQueryFromClient extra为需要读取的客户端
+// ReadQueryFromClient the 'extra' should store the client
 var ReadQueryFromClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
 	client := extra.(*GedisClient)
-	//expand queryBuf's capacity if it is less than the max command capacity，
+	//expand query buffer's capacity if it is less than the max command capacity，
 	if len(client.queryBuf)-client.queryLen < GEDIS_MAX_CMD_BUF {
 		client.queryBuf = append(client.queryBuf, make([]byte, GEDIS_MAX_CMD_BUF)...)
 	}
@@ -111,7 +111,7 @@ var SendReplyToClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extr
 	}
 }
 
-// AeFileEvent 文件事件处理Gedis与客户端的网络IO
+// AeFileEvent deal with net i/o between server and client
 type AeFileEvent struct {
 	connection *net.TCPConn
 	mask       FeType //文件事件类型
@@ -120,18 +120,18 @@ type AeFileEvent struct {
 }
 
 type AeTimeEvent struct {
-	id       int //时间事件标识符
+	id       int
 	mask     TeType
-	when     int64 //何时发生
-	interval int64 // 时间事件间隔
+	when     int64 //when the time event will happen
+	interval int64
 	proc     TimeProc
 	extra    interface{}
 	next     *AeTimeEvent
 }
 
 type AeEventLoop struct {
-	FileEvents      map[int]*AeFileEvent //所有的文件事件
-	TimeEventsHead  *AeTimeEvent         //时间事件链表
+	FileEvents      map[int]*AeFileEvent
+	TimeEventsHead  *AeTimeEvent
 	nextTimeEventID int
 	stopped         bool
 }
@@ -144,7 +144,7 @@ func NewAeEventLoop() *AeEventLoop {
 	}
 }
 
-// 以conn的文件描述符和类型 确定map中的编号
+// determine the index via connection and event type
 func getFeKey(conn *net.TCPConn, mask FeType) int {
 	fd := getConnFd(conn)
 	if mask == AE_READABLE {
@@ -153,7 +153,7 @@ func getFeKey(conn *net.TCPConn, mask FeType) int {
 	return -1 * fd
 }
 
-// 获取conn对应的文件描述符
+// get file descriptor by connection
 func getConnFd(conn *net.TCPConn) int {
 	rawConn, err := conn.SyscallConn()
 	if err != nil {
@@ -172,7 +172,6 @@ func getConnFd(conn *net.TCPConn) int {
 }
 
 func (loop *AeEventLoop) AddFileEvent(conn *net.TCPConn, mask FeType, proc FileProc, extra interface{}) {
-	// 文件事件添加至事件库
 	fe := AeFileEvent{
 		connection: conn,
 		mask:       mask,
@@ -190,7 +189,7 @@ func GetTimeMs() int64 {
 	return time.Now().UnixMilli()
 }
 
-// AddTimeEvent 使用头插法插入时间事件
+// AddTimeEvent insert at the head of the linked list
 func (loop *AeEventLoop) AddTimeEvent(mask TeType, interval int64, proc TimeProc, extra interface{}) int {
 	nextID := loop.nextTimeEventID
 	loop.nextTimeEventID++
@@ -207,7 +206,6 @@ func (loop *AeEventLoop) AddTimeEvent(mask TeType, interval int64, proc TimeProc
 	return nextID
 }
 
-// RemoveTimeEvent 删除对应id的时间事件
 func (loop *AeEventLoop) RemoveTimeEvent(id int) {
 	p := loop.TimeEventsHead
 	var pre *AeTimeEvent
@@ -226,35 +224,21 @@ func (loop *AeEventLoop) RemoveTimeEvent(id int) {
 	}
 }
 
-// 遍历时间时间链表，返回最近的要发生的时间事件
-func (loop *AeEventLoop) nearestTime() int64 {
-	p := loop.TimeEventsHead
-	nearest := GetTimeMs() + 1000
-	for p != nil {
-		if p.when < nearest {
-			nearest = p.when
-		}
-		p = p.next
-	}
-	return nearest
-}
-
-// AeProcess 执行一次 Process函数 相当于一次处理循环
 func (loop *AeEventLoop) AeProcess() {
 
-	for _, fe := range loop.FileEvents { //先执行可读事件，因为可读事件可能会产生可写事件
+	for _, fe := range loop.FileEvents {
 		fe.proc(loop, fe.connection, fe.extra)
 	}
 
 	p := loop.TimeEventsHead
 	now := GetTimeMs()
 	for p != nil {
-		if p.when <= now { //时间事件已超时，触发运行
+		if p.when <= now {
 			p.proc(loop, p.id, p.extra)
 			if p.mask == AE_ONCE {
 				loop.RemoveTimeEvent(p.id)
 			} else if p.mask == AE_NORNAL {
-				p.when = GetTimeMs() + p.interval //重置下次触发时间
+				p.when = GetTimeMs() + p.interval //set next trigger time
 			}
 		}
 		p = p.next
@@ -263,7 +247,7 @@ func (loop *AeEventLoop) AeProcess() {
 
 func (loop *AeEventLoop) AeMain(accept func()) {
 	for !loop.stopped {
-		accept() // 阻塞的监听网络连接
+		accept()
 		loop.AeProcess()
 	}
 }

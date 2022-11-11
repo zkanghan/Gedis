@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"net"
-	"sync"
 	"testing"
 	"time"
 )
@@ -78,19 +77,18 @@ var OneProc TimeProc = func(loop *AeEventLoop, id int, extra any) {
 }
 
 var NormalProc TimeProc = func(loop *AeEventLoop, id int, extra any) {
-	wg := extra.(*sync.WaitGroup)
+	wg := extra.(chan struct{})
 	fmt.Printf("normal time event %v done\n", id)
-	wg.Done()
+	wg <- struct{}{}
 }
 
 func TestAe(t *testing.T) {
 	err := InitServer()
 	assert.Nil(t, err)
 
-	wg := &sync.WaitGroup{}
-	wg.Add(3)
-	server.aeloop.AddTimeEvent(AE_ONCE, 20, OneProc, t)
-	server.aeloop.AddTimeEvent(AE_NORNAL, 100, NormalProc, wg)
+	wg := make(chan struct{}, 3)
+	server.aeloop.AddTimeEvent(AE_ONCE, 10, OneProc, t)
+	server.aeloop.AddTimeEvent(AE_NORNAL, 10, NormalProc, wg)
 	go server.aeloop.AeMain(ac)
 	//  下面的充当客户端请求
 	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1%s", PORT))
@@ -107,6 +105,8 @@ func TestAe(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 11, n)
 
-	wg.Wait()
+	<-wg
+	<-wg
+	<-wg
 	server.aeloop.stopped = true
 }
