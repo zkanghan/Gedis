@@ -52,6 +52,7 @@ func AcceptHandler() {
 }
 
 // ReadQueryFromClient the 'extra' should store the client
+// TODO:optimized the reading implementation
 var ReadQueryFromClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
 	client := extra.(*GedisClient)
 	//expand query buffer's capacity if it is less than the max command capacity，
@@ -77,6 +78,12 @@ var ReadQueryFromClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, ex
 	}
 	client.queryLen += n
 
+	err = client.ProcessQueryBuf()
+	if err != nil {
+		log.Printf("process query buf err:%v", err)
+		freeClient(client)
+		return
+	}
 }
 
 var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
