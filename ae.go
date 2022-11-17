@@ -94,7 +94,7 @@ var SendReplyToClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extr
 	client := extra.(*GedisClient)
 	for client.reply.Length() > 0 {
 		rep := client.reply.First()
-		buf := []byte(rep.Val.Val_.(string))
+		buf := []byte(rep.Val.StrVal())
 		bufLen := len(buf)
 		if client.sentLen < bufLen {
 			n, err := conn.Write(buf[client.sentLen:])
