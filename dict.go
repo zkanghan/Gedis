@@ -48,7 +48,8 @@ type Dict struct {
 
 func NewDict(dictType DictType) *Dict {
 	return &Dict{
-		DictType: dictType,
+		DictType:    dictType,
+		rehashIndex: -1,
 	}
 }
 
@@ -171,4 +172,119 @@ func (dict *Dict) getKeyIndex(key *GObj) int64 {
 		}
 	}
 	return idx
+}
+
+// AddRaw Low level add.
+// this method adds the entry but instead of setting a value returns the dictEntry structure to the user
+// Return values:
+// if key already exists NULL is returned.
+// if key was added, the hash entry is returned to be manipulated by the caller.
+func (dict *Dict) AddRaw(key *GObj) *Entry {
+	if dict.isRehashing() {
+		dict.rehashStep()
+	}
+	idx := dict.getKeyIndex(key)
+	if idx == -1 {
+		return nil
+	}
+	var ht *hTable
+	if dict.isRehashing() {
+		ht = dict.HTables[1]
+	} else {
+		ht = dict.HTables[0]
+	}
+	//insert the new entry into the header of the linked list
+	var e Entry
+	e.key = key
+	e.next = ht.table[idx]
+	ht.table[idx] = &e
+	ht.used += 1
+	return &e
+}
+
+//Add insert a key-value pair to the dict, return error if key exists
+func (dict *Dict) Add(key, val *GObj) error {
+	entry := dict.AddRaw(key)
+	if entry == nil {
+		return ERR_KEY_EXIST
+	}
+	entry.val = val
+	return nil
+}
+
+// Find if key not exists, return nil
+func (dict *Dict) Find(key *GObj) *Entry {
+	if dict.HTables[0] == nil {
+		return nil
+	}
+	if dict.isRehashing() {
+		dict.rehashStep()
+	}
+	// find key in both hash table
+	h := dict.HashFunc(key)
+	for i := 0; i <= 1; i++ {
+		idx := h & dict.HTables[i].sizeMask
+		e := dict.HTables[i].table[idx]
+		for e != nil {
+			if dict.EqualFunc(e.key, key) {
+				return e
+			}
+			e = e.next
+		}
+		//if the dict is rehashing, continue to search the second hash table
+		if !dict.isRehashing() {
+			return nil
+		}
+	}
+	return nil
+}
+
+// Set add a key-value pair, discarding the old if the key already exists.
+func (dict *Dict) Set(key, val *GObj) {
+	// if key not exist
+	if err := dict.Add(key, val); err == nil {
+		return
+	}
+	entry := dict.Find(key)
+	entry.val = val
+	return
+}
+
+func (dict *Dict) Get(key *GObj) *GObj {
+	entry := dict.Find(key)
+	if entry == nil {
+		return nil
+	}
+	return entry.val
+}
+
+func (dict *Dict) Delete(key *GObj) error {
+	if dict.HTables[0] == nil {
+		return ERR_KEY_NOT_EXIST
+	}
+	if dict.isRehashing() {
+		dict.rehashStep()
+	}
+	h := dict.HashFunc(key)
+	for i := 0; i <= 1; i++ {
+		idx := h & dict.HTables[i].sizeMask
+		e := dict.HTables[i].table[idx]
+		var pre *Entry
+		for e != nil {
+			if dict.EqualFunc(e.key, key) {
+				if pre == nil {
+					dict.HTables[i].table[idx] = e.next
+				} else {
+					pre.next = e.next
+				}
+				return nil
+			}
+			pre = e
+			e = e.next
+		}
+		if !dict.isRehashing() {
+			return ERR_KEY_NOT_EXIST
+		}
+	}
+	return ERR_KEY_NOT_EXIST
 }
