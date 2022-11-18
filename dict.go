@@ -14,13 +14,13 @@ const (
 
 var (
 	ERR_EXPAND        = errors.New("expand error")
-	ERR_KEY_EXIST     = errors.New("the key already exists")
-	ERR_KEY_NOT_EXIST = errors.New("key does not exist")
+	ERR_KEY_EXIST     = errors.New("the  already exists")
+	ERR_KEY_NOT_EXIST = errors.New(" does not exist")
 )
 
 type Entry struct {
-	key  *GObj
-	val  *GObj
+	Key  *GObj
+	Val  *GObj
 	next *Entry
 }
 
@@ -80,7 +80,7 @@ func (dict *Dict) rehash(n int) {
 		for entry != nil {
 			nx := entry.next
 			//get the index in the new hash table
-			index := dict.HashFunc(entry.key) & dict.HTables[1].sizeMask
+			index := dict.HashFunc(entry.Key) & dict.HTables[1].sizeMask
 			//insert nodes by header interpolation
 			entry.next = dict.HTables[1].table[index]
 			dict.HTables[1].table[index] = entry
@@ -108,8 +108,7 @@ func nextPower(size int64) int64 {
 func (dict *Dict) expand(size int64) error {
 	realSize := nextPower(size)
 	// the size is invalid if it is smaller than the number of elements already inside the hash table
-	//  or the dict is rehashing
-	// TODO:check use 'size' or 'used' to judge
+	// that means the size is overflowed
 	if dict.isRehashing() || (dict.HTables[0] != nil && dict.HTables[0].used >= realSize) {
 		return ERR_EXPAND
 	}
@@ -140,14 +139,13 @@ func (dict *Dict) expandIfNeeded() error {
 		return dict.expand(INIT_SIZE)
 	}
 	if dict.HTables[0].used >= dict.HTables[0].size &&
-		dict.HTables[0].used/dict.HTables[1].size > FORCE_REHASH_RATION {
+		dict.HTables[0].used/dict.HTables[0].size > FORCE_REHASH_RATION {
 		return dict.expand(dict.HTables[0].used * EXPAND_RATION)
 	}
 	return nil
 }
 
-// returns the index of a free slot that can be populated with
-// a hash entry for the given 'key', if the key already exists return -1.
+// returns the index of the given key in hash table, if the key already exists return -1.
 // note that if the dict is doing rehashing, the returned index is always in the second hash table
 func (dict *Dict) getKeyIndex(key *GObj) int64 {
 	// expand the hash table if needed
@@ -161,7 +159,7 @@ func (dict *Dict) getKeyIndex(key *GObj) int64 {
 		// check whether the 'key' is already exists
 		e := dict.HTables[i].table[idx]
 		for e != nil {
-			if dict.EqualFunc(e.key, key) {
+			if dict.EqualFunc(e.Key, key) {
 				return -1
 			}
 			e = e.next
@@ -195,7 +193,7 @@ func (dict *Dict) AddRaw(key *GObj) *Entry {
 	}
 	//insert the new entry into the header of the linked list
 	var e Entry
-	e.key = key
+	e.Key = key
 	e.next = ht.table[idx]
 	ht.table[idx] = &e
 	ht.used += 1
@@ -203,16 +201,17 @@ func (dict *Dict) AddRaw(key *GObj) *Entry {
 }
 
 //Add insert a key-value pair to the dict, return error if key exists
+//the method will expand the dict if needed
 func (dict *Dict) Add(key, val *GObj) error {
 	entry := dict.AddRaw(key)
 	if entry == nil {
 		return ERR_KEY_EXIST
 	}
-	entry.val = val
+	entry.Val = val
 	return nil
 }
 
-// Find if key not exists, return nil
+// Find if not exists, return nil
 func (dict *Dict) Find(key *GObj) *Entry {
 	if dict.HTables[0] == nil {
 		return nil
@@ -220,13 +219,13 @@ func (dict *Dict) Find(key *GObj) *Entry {
 	if dict.isRehashing() {
 		dict.rehashStep()
 	}
-	// find key in both hash table
+	// find  in both hash table
 	h := dict.HashFunc(key)
 	for i := 0; i <= 1; i++ {
 		idx := h & dict.HTables[i].sizeMask
 		e := dict.HTables[i].table[idx]
 		for e != nil {
-			if dict.EqualFunc(e.key, key) {
+			if dict.EqualFunc(e.Key, key) {
 				return e
 			}
 			e = e.next
@@ -241,12 +240,12 @@ func (dict *Dict) Find(key *GObj) *Entry {
 
 // Set add a key-value pair, discarding the old if the key already exists.
 func (dict *Dict) Set(key, val *GObj) {
-	// if key not exist
+	// if not exist
 	if err := dict.Add(key, val); err == nil {
 		return
 	}
 	entry := dict.Find(key)
-	entry.val = val
+	entry.Val = val
 	return
 }
 
@@ -255,7 +254,7 @@ func (dict *Dict) Get(key *GObj) *GObj {
 	if entry == nil {
 		return nil
 	}
-	return entry.val
+	return entry.Val
 }
 
 func (dict *Dict) Delete(key *GObj) error {
@@ -271,7 +270,7 @@ func (dict *Dict) Delete(key *GObj) error {
 		e := dict.HTables[i].table[idx]
 		var pre *Entry
 		for e != nil {
-			if dict.EqualFunc(e.key, key) {
+			if dict.EqualFunc(e.Key, key) {
 				if pre == nil {
 					dict.HTables[i].table[idx] = e.next
 				} else {
