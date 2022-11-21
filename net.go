@@ -19,6 +19,7 @@ func Read(tcpConn *net.TCPConn, b []byte) (n int, err error) {
 	return n, err
 }
 
+// the fd will change after read or write operation
 func getConnFD(tcpConn *net.TCPConn) (int, error) {
 	file, err := tcpConn.File()
 	if err != nil {
