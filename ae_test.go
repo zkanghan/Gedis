@@ -12,7 +12,7 @@ import (
 var writeProc FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
 	by := extra.([]byte)
 
-	n, err := conn.Write(by)
+	n, err := Write(conn, by)
 	if err != nil {
 		fmt.Println("write error: ", err)
 		return
@@ -24,18 +24,13 @@ var writeProc FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
 
 var readProc FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
 	b := make([]byte, 11)
-
-	err := conn.SetReadDeadline(time.Now().Add(time.Millisecond * 5))
+	defer fmt.Println("readProc end")
+	n, err := Read(conn, b)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	n, err := conn.Read(b) //我超，就是在这里阻塞住了
-	if err != nil {        //未读取到数据或者出错必需要返回
-		need := err.(*net.OpError)
-		if !need.Timeout() {
-			fmt.Println("read error: ", err)
-		}
+	if n == 0 {
 		return
 	}
 	fmt.Printf("read %v bytes\n", n)
@@ -50,7 +45,7 @@ func ac() {
 		return
 	}
 	for {
-		conn, err := server.listener.Accept()
+		tcpConn, err := server.listener.AcceptTCP()
 		if err != nil {
 			opErr := err.(*net.OpError)
 			if opErr.Timeout() { //expected read time out error
@@ -59,14 +54,8 @@ func ac() {
 			fmt.Printf("%+v\n", err)
 			return
 		}
-		tcpConn, ok := conn.(*net.TCPConn)
-		if !ok { //不是tcp连接
-			return
-		}
-		client := NewClient(tcpConn)
-		server.clients[getConnFd(tcpConn)] = client
 		// 连接建立成功，事件可读，处理客户端请求
-		server.aeloop.AddFileEvent(tcpConn, AE_READABLE, readProc, client)
+		server.aeloop.AddFileEvent(tcpConn, AE_READABLE, readProc, nil)
 	}
 }
 
@@ -94,14 +83,16 @@ func TestAe(t *testing.T) {
 	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1%s", PORT))
 	assert.Nil(t, err)
 
+	tcpConn := conn.(*net.TCPConn)
 	//测试写事件
 	msg := "hello gedis"
-	n, err := conn.Write([]byte(msg))
+	n, err := Write(tcpConn, []byte(msg))
 	assert.Nil(t, err)
 	assert.Equal(t, 11, n)
 	// 测试读事件
+	time.Sleep(time.Second)
 	b := make([]byte, 11)
-	n, err = conn.Read(b)
+	n, err = Read(tcpConn, b)
 	assert.Nil(t, err)
 	assert.Equal(t, 11, n)
 

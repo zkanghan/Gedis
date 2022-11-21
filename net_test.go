@@ -21,6 +21,10 @@ func TestNet(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 0, n)
 
+	n, err = Read(tcpConn, b)
+	assert.Nil(t, err)
+	assert.Equal(t, 0, n)
+
 	b = []byte("hello gedis")
 	n, err = Write(tcpConn, b)
 	assert.Nil(t, err)

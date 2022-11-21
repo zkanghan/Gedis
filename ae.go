@@ -29,18 +29,14 @@ func AcceptHandler() {
 		return
 	}
 	for {
-		conn, err := server.listener.Accept()
+		tcpConn, err := server.listener.AcceptTCP()
 		if err != nil {
 			opErr := err.(*net.OpError)
 			if opErr.Timeout() {
 				return
 			}
 			//  if isn't time out error
-			log.Println("accept error: ", err)
-			return
-		}
-		tcpConn, ok := conn.(*net.TCPConn)
-		if !ok { //不是tcp连接
+			log.Println("accept tcp error: ", err)
 			return
 		}
 		client := NewClient(tcpConn)
@@ -52,28 +48,21 @@ func AcceptHandler() {
 }
 
 // ReadQueryFromClient the 'extra' should store the client
-// TODO:optimized the reading implementation
 var ReadQueryFromClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
 	client := extra.(*GedisClient)
 	//expand query buffer's capacity if it is less than the max command capacity，
 	if len(client.queryBuf)-client.queryLen < GEDIS_MAX_CMD_BUF {
 		client.queryBuf = append(client.queryBuf, make([]byte, GEDIS_MAX_CMD_BUF)...)
 	}
-	// set read deadline with 5 ms
-	if err := conn.SetReadDeadline(time.Now().Add(time.Millisecond * 5)); err != nil {
-		log.Printf("client %v set read dead line error: %v\n", conn, err)
+
+	// no blocked read
+	n, err := Read(conn, client.queryBuf[client.queryLen:])
+	if err != nil {
+		log.Printf("client %v read error: %v", conn, err)
 		freeClient(client)
 		return
 	}
-
-	n, err := conn.Read(client.queryBuf[client.queryLen:])
-	if err != nil {
-		opErr := err.(*net.OpError)
-		if opErr.Timeout() { //expected read time out error
-			return
-		}
-		log.Printf("client %v read error: %v", conn, err)
-		freeClient(client)
+	if n == 0 {
 		return
 	}
 	client.queryLen += n
@@ -97,7 +86,7 @@ var SendReplyToClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extr
 		buf := []byte(rep.Val.StrVal())
 		bufLen := len(buf)
 		if client.sentLen < bufLen {
-			n, err := conn.Write(buf[client.sentLen:])
+			n, err := Write(conn, buf[client.sentLen:])
 			if err != nil {
 				log.Println("sent reply error: ", err)
 				freeClient(client)

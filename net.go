@@ -6,10 +6,7 @@ import (
 )
 
 func Read(tcpConn *net.TCPConn, b []byte) (n int, err error) {
-	fd, err := getConnFD(tcpConn)
-	if err != nil {
-		return 0, err
-	}
+	fd := getConnFd(tcpConn)
 	n, err = syscall.Read(fd, b)
 	if err != nil {
 		if err == syscall.EAGAIN || err == syscall.EINTR {
@@ -19,20 +16,8 @@ func Read(tcpConn *net.TCPConn, b []byte) (n int, err error) {
 	return n, err
 }
 
-// the fd will change after read or write operation
-func getConnFD(tcpConn *net.TCPConn) (int, error) {
-	file, err := tcpConn.File()
-	if err != nil {
-		return 0, err
-	}
-	return int(file.Fd()), nil
-}
-
 func Write(tcpConn *net.TCPConn, b []byte) (n int, err error) {
-	fd, err := getConnFD(tcpConn)
-	if err != nil {
-		return 0, err
-	}
+	fd := getConnFd(tcpConn)
 	n, err = syscall.Write(fd, b)
 	if err != nil {
 		if err == syscall.EAGAIN {
