@@ -24,7 +24,9 @@ func InitServer() error {
 		return errors.New("listener is not tcp")
 	}
 	server.clients = make(map[int]*GedisClient)
-	//TODO: init gedis db
+	server.db = &GedisDB{
+		data: NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
+	}
 	server.listener = tcpListener
 	server.aeloop = NewAeEventLoop()
 	return nil

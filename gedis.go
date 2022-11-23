@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"strconv"
@@ -11,6 +12,12 @@ import (
 type CmdType int8
 
 const (
+	REPLY_UNKNOWN_CMD string = "-ERR unknown command\r\n"
+	REPLY_WRONG_ARITY string = "-ERR wrong number of arguments\r\n"
+	REPLY_NIL         string = "+nil\r\n"
+	REPLY_WRONG_TYPE  string = "-ERR invalid type\r\n"
+	REPLY_OK          string = "+ok\r\n"
+
 	CMD_UNKNOWN CmdType = 0
 	CMD_INLINE  CmdType = 1
 	CMD_BULK    CmdType = 2
@@ -23,13 +30,42 @@ type GedisClient struct {
 	conn     *net.TCPConn
 	db       *GedisDB
 	args     []*GObj
-	reply    *List // 节点为STR类型，存储需要响应的数据
-	sentLen  int
+	reply    *List  // the type of node is string
+	sentLen  int    //the length that has been sent
 	queryBuf []byte //读取缓冲区
 	queryLen int    //已读的长度
 	cmdType  CmdType
 	bulkCnt  int //the number of bulk strings to be read
 	bulkLen  int //the length of string that need to read At present
+}
+
+func NewClient(conn *net.TCPConn) *GedisClient {
+	var client GedisClient
+	client.conn = conn
+	client.db = server.db
+	client.queryBuf = make([]byte, GEDIS_IO_BUF)
+	client.reply = ListCreate(ListType{EqualFunc: EqualStr}) //链表节点为STR类型
+	return &client
+}
+
+func freeClient(client *GedisClient) {
+	delete(server.clients, getConnFd(client.conn))
+	server.aeloop.RemoveFileEvent(client.conn, AE_READABLE)
+	server.aeloop.RemoveFileEvent(client.conn, AE_WRITABLE)
+	err := client.conn.Close()
+	if err != nil {
+		log.Printf("free client connection error: %v", err)
+	}
+}
+
+func resetClient(client *GedisClient) {
+	client.bulkCnt = 0
+	client.cmdType = CMD_UNKNOWN
+}
+
+func (client *GedisClient) AddReply(str string) {
+	node := NewObject(STR, str)
+	client.reply.TailPush(node)
 }
 
 func (client *GedisClient) ProcessQueryBuf() error {
@@ -59,7 +95,7 @@ func (client *GedisClient) ProcessQueryBuf() error {
 				resetClient(client)
 			} else {
 				ProcessCommand(client)
-				resetClient(client)
+				server.aeloop.AddFileEvent(client.conn, AE_WRITABLE, SendReplyToClient, client)
 			}
 		} else {
 			break //incomplete command
@@ -172,32 +208,75 @@ type GedisServer struct {
 	aeloop   *AeEventLoop //also global unique
 }
 
+type CommandProc func(client *GedisClient)
 type GedisCommand struct {
+	name  string
+	arity int
+	proc  CommandProc
+}
+
+var cmdTable = []GedisCommand{
+	{"get", 2, getCommand},
+	{"set", 3, setCommand},
+}
+
+//get a string
+var getCommand CommandProc = func(client *GedisClient) {
+	key := client.args[1]
+	entry := server.db.data.Find(key)
+	if entry == nil {
+		client.AddReply(REPLY_NIL)
+		return
+	}
+	if entry.Val.Type_ != STR {
+		client.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+	client.AddReply(fmt.Sprintf("$%d\r\n", len(entry.Val.StrVal())))
+	client.AddReply(fmt.Sprintf("%s\r\n", entry.Val.StrVal()))
+	return
+}
+
+// set s string value
+var setCommand CommandProc = func(client *GedisClient) {
+	key, val := client.args[1], client.args[2]
+	entry := server.db.data.Find(key)
+	if entry != nil && entry.Val.Type_ != STR {
+		client.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+	server.db.data.Set(key, val)
+	client.AddReply(REPLY_OK)
+}
+
+func lookUpCommand(name string) *GedisCommand {
+	for _, cmd := range cmdTable {
+		if cmd.name == name {
+			return &cmd
+		}
+	}
+	return nil
 }
 
 func ProcessCommand(client *GedisClient) {
-	//TODO: finish it
+	cmd := lookUpCommand(client.args[0].StrVal())
+	if cmd == nil {
+		client.AddReply(REPLY_UNKNOWN_CMD)
+		resetClient(client)
+		return
+	} else if cmd.arity > 0 && cmd.arity != len(client.args) {
+		client.AddReply(REPLY_WRONG_ARITY)
+		resetClient(client)
+		return
+	}
+	//exec the command
+	cmd.proc(client)
+	resetClient(client)
 }
 
 type GedisDB struct {
-}
-
-func NewClient(conn *net.TCPConn) *GedisClient {
-	var client GedisClient
-	client.conn = conn
-	client.db = server.db
-	client.queryBuf = make([]byte, GEDIS_IO_BUF)
-	client.reply = ListCreate(ListType{EqualFunc: EqualStr}) //链表节点为STR类型
-	return &client
-}
-
-func freeClient(client *GedisClient) {
-
-}
-
-func resetClient(client *GedisClient) {
-	// TODO: finish reset
-	client.cmdType = CMD_UNKNOWN
+	data   *Dict
+	expire *Dict
 }
 
 func main() {
