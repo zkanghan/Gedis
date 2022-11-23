@@ -74,6 +74,13 @@ func (list *List) DelNode(n *Node) {
 	if n == nil {
 		return
 	}
+	if list.Length() == 1 && list.head == n {
+		list.head = nil
+		list.tail = nil
+		list.length = 0
+		return
+	}
+
 	if list.head == n {
 		list.head = n.next
 		n.next.pre = nil // 断开n与前一个节点的连接

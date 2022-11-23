@@ -9,6 +9,10 @@ func TestList(t *testing.T) {
 	list := ListCreate(ListType{EqualFunc: EqualStr})
 	assert.Equal(t, 0, list.Length())
 
+	list.TailPush(NewObject(STR, "0"))
+	np := list.Find(NewObject(STR, "0"))
+	list.DelNode(np)
+
 	list.TailPush(NewObject(STR, "1"))
 	list.TailPush(NewObject(STR, "2"))
 	list.TailPush(NewObject(STR, "3"))
