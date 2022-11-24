@@ -23,7 +23,7 @@ type TimeProc func(loop *AeEventLoop, id int, extra any)
 
 // AcceptHandler blocked to wait for connection
 func AcceptHandler() {
-	err := server.listener.SetDeadline(time.Now().Add(time.Millisecond * 12))
+	err := server.listener.SetDeadline(time.Now().Add(time.Millisecond * 1))
 	if err != nil {
 		log.Println("set listener error: ", err)
 		return
@@ -76,7 +76,7 @@ var ReadQueryFromClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, ex
 }
 
 var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
-	// TODO: 执行对键值的随机检查
+	// TODO: check the dict
 }
 
 var SendReplyToClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
@@ -110,7 +110,7 @@ var SendReplyToClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extr
 // AeFileEvent deal with net i/o between server and client
 type AeFileEvent struct {
 	connection *net.TCPConn
-	mask       FeType //文件事件类型
+	mask       FeType //type of file event
 	proc       FileProc
 	extra      interface{}
 }

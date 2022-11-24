@@ -44,7 +44,7 @@ func NewClient(conn *net.TCPConn) *GedisClient {
 	client.conn = conn
 	client.db = server.db
 	client.queryBuf = make([]byte, GEDIS_IO_BUF)
-	client.reply = ListCreate(ListType{EqualFunc: EqualStr}) //链表节点为STR类型
+	client.reply = ListCreate(ListType{EqualFunc: EqualStr}) //the type of node is string
 	return &client
 }
 
@@ -70,7 +70,7 @@ func (client *GedisClient) AddReply(str string) {
 
 func (client *GedisClient) ProcessQueryBuf() error {
 	for client.queryLen > 0 {
-		if client.cmdType == CMD_UNKNOWN { // 命令第一次被处理
+		if client.cmdType == CMD_UNKNOWN { // the command have not processed currently
 			if client.queryBuf[0] == '*' {
 				client.cmdType = CMD_BULK
 			} else {
@@ -104,7 +104,7 @@ func (client *GedisClient) ProcessQueryBuf() error {
 	return nil
 }
 
-// 查找换行符 \r\n，未找到返回-1
+// return the index of next CRLF, -1 will be returned if didn't find
 func findCRLFInQuery(client *GedisClient) (int, error) {
 	index := strings.Index(string(client.queryBuf[:client.queryLen]), "\r\n")
 	if index < 0 && client.queryLen > GEDIS_MAX_CMD_BUF { //缓冲区被读满了还没出现换行符
@@ -119,7 +119,7 @@ func handleInlineBuf(client *GedisClient) (bool, error) {
 	if index < 0 { //未找到或出错，不进行处理
 		return false, err
 	}
-	//  到这里说明找到一条完整的inline格式命令，按空格切割
+	//  find a complete command
 	subs := strings.Split(string(client.queryBuf[:index]), " ")
 	client.skipCRLF(index)
 	client.args = make([]*GObj, len(subs))
@@ -129,14 +129,14 @@ func handleInlineBuf(client *GedisClient) (bool, error) {
 	return true, nil
 }
 
-// 将client.client.queryBuf[start:end] 的字符串转化为数字，注意截取数字后会跳过CRLF符
+// note that it will skip a CRLF behind the number
 func getNumInQuery(client *GedisClient, start, end int) (int, error) {
 	num, err := strconv.Atoi(string(client.queryBuf[start:end]))
 	client.skipCRLF(end)
 	return num, err
 }
 
-// 从index位置跳过 \r\n
+// skip a \r\n in query buffer
 func (client *GedisClient) skipCRLF(index int) {
 	client.queryBuf = client.queryBuf[index+2:]
 	client.queryLen -= index + 2

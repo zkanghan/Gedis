@@ -5,13 +5,11 @@ import (
 	"net"
 )
 
-//  conf 文件用负责 全局变量和项目初始化
-
 const (
 	PORT = ":8888"
 )
 
-// globally unique
+// global variable
 var server GedisServer
 
 func InitServer() error {
@@ -23,11 +21,14 @@ func InitServer() error {
 	if !ok {
 		return errors.New("listener is not tcp")
 	}
-	server.clients = make(map[int]*GedisClient)
-	server.db = &GedisDB{
-		data: NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
+	server = GedisServer{
+		listener: tcpListener,
+		port:     8888,
+		db: &GedisDB{
+			data: NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
+		},
+		clients: make(map[int]*GedisClient),
+		aeloop:  NewAeEventLoop(),
 	}
-	server.listener = tcpListener
-	server.aeloop = NewAeEventLoop()
 	return nil
 }

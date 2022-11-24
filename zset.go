@@ -1,6 +1,5 @@
 package main
 
-// zset  数据结构
-type Zset struct {
+type ZSet struct {
 	//TODO: implement it
 }

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// 向conn写入数据
+// writable event
 var writeProc FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
 	by := extra.([]byte)
 
@@ -54,7 +54,6 @@ func ac() {
 			fmt.Printf("%+v\n", err)
 			return
 		}
-		// 连接建立成功，事件可读，处理客户端请求
 		server.aeloop.AddFileEvent(tcpConn, AE_READABLE, readProc, nil)
 	}
 }

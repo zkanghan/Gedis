@@ -1,6 +1,6 @@
 package main
 
-//  list 双向链表数据结构
+//  doubly linked list
 
 type Node struct {
 	Val  *GObj
@@ -28,7 +28,7 @@ func ListCreate(listType ListType) *List {
 	}
 }
 
-// Find 返回nil表示未找到
+// Find if not found return nil
 func (list *List) Find(val *GObj) *Node {
 	p := list.head
 	for p != nil {
@@ -40,7 +40,7 @@ func (list *List) Find(val *GObj) *Node {
 	return p
 }
 
-// TailPush 尾插法
+// TailPush insert node at the tail
 func (list *List) TailPush(val *GObj) {
 	var n Node
 	n.Val = val
@@ -55,7 +55,7 @@ func (list *List) TailPush(val *GObj) {
 	list.length += 1
 }
 
-// HeadPush 头插法
+// HeadPush insert node at the head
 func (list *List) HeadPush(val *GObj) {
 	var n Node
 	n.Val = val
@@ -83,8 +83,8 @@ func (list *List) DelNode(n *Node) {
 
 	if list.head == n {
 		list.head = n.next
-		n.next.pre = nil // 断开n与前一个节点的连接
-		n.next = nil     //断开n与后一个节点的连接
+		n.next.pre = nil
+		n.next = nil
 	} else if list.tail == n {
 		list.tail = n.pre
 		n.pre.next = nil

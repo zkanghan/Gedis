@@ -1,7 +1,6 @@
 package main
 
-//  obj 对象
-type GType int8 //对象类型
+type GType int8
 type GVal any
 
 const (
