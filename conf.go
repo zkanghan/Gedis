@@ -25,7 +25,8 @@ func InitServer() error {
 		listener: tcpListener,
 		port:     8888,
 		db: &GedisDB{
-			data: NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
+			data:   NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
+			expire: NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
 		},
 		clients: make(map[int]*GedisClient),
 		aeloop:  NewAeEventLoop(),

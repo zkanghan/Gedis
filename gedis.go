@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type CmdType int8
@@ -17,6 +18,8 @@ const (
 	REPLY_NIL         string = "+nil\r\n"
 	REPLY_WRONG_TYPE  string = "-ERR invalid type\r\n"
 	REPLY_OK          string = "+ok\r\n"
+	REPLY_ZERO        string = ":0\r\n"
+	REPLY_ONE         string = ":1\r\n"
 
 	CMD_UNKNOWN CmdType = 0
 	CMD_INLINE  CmdType = 1
@@ -218,11 +221,14 @@ type GedisCommand struct {
 var cmdTable = []GedisCommand{
 	{"get", 2, getCommand},
 	{"set", 3, setCommand},
+	{"expire", 3, expireCommand},
+	//TODO: expire and pexpire
 }
 
 //get a string
 var getCommand CommandProc = func(client *GedisClient) {
 	key := client.args[1]
+	expireIfNeeded(key)
 	entry := server.db.data.Find(key)
 	if entry == nil {
 		client.AddReply(REPLY_NIL)
@@ -237,7 +243,7 @@ var getCommand CommandProc = func(client *GedisClient) {
 	return
 }
 
-// set s string value
+// set a string value, and will remove expire time of key
 var setCommand CommandProc = func(client *GedisClient) {
 	key, val := client.args[1], client.args[2]
 	entry := server.db.data.Find(key)
@@ -246,6 +252,7 @@ var setCommand CommandProc = func(client *GedisClient) {
 		return
 	}
 	server.db.data.Set(key, val)
+	_ = removeExpire(key)
 	client.AddReply(REPLY_OK)
 }
 
@@ -275,8 +282,59 @@ func ProcessCommand(client *GedisClient) {
 }
 
 type GedisDB struct {
-	data   *Dict
+	data *Dict
+	//val is a unix timestamp
 	expire *Dict
+}
+
+//================================= Expire =================================
+func expireIfNeeded(key *GObj) {
+	entry := server.db.expire.Find(key)
+	// no expire
+	if entry == nil {
+		return
+	}
+	now := GetTimeMs()
+	//  key haven't expired
+	if now < entry.Val.IntVal() {
+		return
+	}
+	_ = server.db.expire.Delete(key)
+	_ = server.db.data.Delete(key)
+}
+
+func removeExpire(key *GObj) error {
+	return server.db.expire.Delete(key)
+}
+
+func setExpire(key *GObj, timeMS string) {
+	val := NewObject(STR, timeMS)
+	server.db.expire.Set(key, val)
+}
+
+var expireCommand CommandProc = func(client *GedisClient) {
+	key := client.args[1]
+	if server.db.data.Find(key) == nil {
+		client.AddReply(REPLY_ZERO)
+		return
+	}
+	sc := client.args[2].IntVal()
+	if sc <= 0 {
+		client.AddReply(REPLY_ZERO)
+		return
+	}
+	expireTime := time.Now().Add(time.Second * time.Duration(sc)).UnixMilli()
+	setExpire(key, strconv.FormatInt(expireTime, 10))
+	client.AddReply(REPLY_ONE)
+}
+
+//return the expired time of the specified key, or -1 if no expire is associated with this key
+func getExpire(key *GObj) int64 {
+	entry := server.db.expire.Find(key)
+	if entry == nil {
+		return -1
+	}
+	return entry.Val.IntVal()
 }
 
 func main() {
