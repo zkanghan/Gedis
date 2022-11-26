@@ -1,4 +1,16 @@
 
 # Gedis
 
-**使用go语言编写的 key-value 内存存储系统**
+**A golang implementation of REmote DIctionary Server**
+
+Supported Features：
+
+- Support string, dict, list
+- Redis Serialization Protocol
+- TTL
+
+Todo :
+
+- [ ] Epoll
+- [ ] AOF
+- [ ] AOF rewrite
