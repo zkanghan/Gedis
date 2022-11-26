@@ -222,7 +222,8 @@ var cmdTable = []GedisCommand{
 	{"get", 2, getCommand},
 	{"set", 3, setCommand},
 	{"expire", 3, expireCommand},
-	//TODO: expire and pexpire
+	{"ttl", 2, ttlCommand},
+	//TODO: list command & hash command
 }
 
 //get a string
@@ -328,13 +329,30 @@ var expireCommand CommandProc = func(client *GedisClient) {
 	client.AddReply(REPLY_ONE)
 }
 
-//return the expired time of the specified key, or -1 if no expire is associated with this key
+//return -1 means the specified key no expire, or -2 means the specified key not exist
 func getExpire(key *GObj) int64 {
+	// key not exist
+	if server.db.data.Find(key) == nil {
+		return -2
+	}
+	// key no expire
 	entry := server.db.expire.Find(key)
 	if entry == nil {
 		return -1
 	}
-	return entry.Val.IntVal()
+	ttl := time.UnixMilli(entry.Val.IntVal()).Sub(time.Now()).Seconds()
+	//if the key expired, we consider it was deleted in logic
+	if ttl < 0 {
+		return -2
+	}
+	return int64(ttl)
+}
+
+//return -1 if the specified key no exist or no expire is associated with this key
+var ttlCommand CommandProc = func(client *GedisClient) {
+	key := client.args[1]
+	ttl := getExpire(key)
+	client.AddReply(fmt.Sprintf(":%d\r\n", ttl))
 }
 
 func main() {
