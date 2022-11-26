@@ -1,13 +1,11 @@
 package main
 
 import (
-	"net"
 	"syscall"
 )
 
-func Read(tcpConn *net.TCPConn, b []byte) (n int, err error) {
-	fd := getConnFd(tcpConn)
-	n, err = syscall.Read(fd, b)
+func Read(nfd int, b []byte) (n int, err error) {
+	n, err = syscall.Read(nfd, b)
 	if err != nil {
 		if err == syscall.EAGAIN || err == syscall.EINTR {
 			return 0, nil
@@ -16,9 +14,8 @@ func Read(tcpConn *net.TCPConn, b []byte) (n int, err error) {
 	return n, err
 }
 
-func Write(tcpConn *net.TCPConn, b []byte) (n int, err error) {
-	fd := getConnFd(tcpConn)
-	n, err = syscall.Write(fd, b)
+func Write(nfd int, b []byte) (n int, err error) {
+	n, err = syscall.Write(nfd, b)
 	if err != nil {
 		if err == syscall.EAGAIN {
 			return 0, nil
@@ -26,3 +23,5 @@ func Write(tcpConn *net.TCPConn, b []byte) (n int, err error) {
 	}
 	return n, err
 }
+
+//TODO: use epoll

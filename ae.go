@@ -18,7 +18,7 @@ const (
 	AE_ONCE   TeType = 2
 )
 
-type FileProc func(loop *AeEventLoop, conn *net.TCPConn, extra any)
+type FileProc func(loop *AeEventLoop, nfd int, extra any)
 type TimeProc func(loop *AeEventLoop, id int, extra any)
 
 // AcceptHandler blocked to wait for connection
@@ -40,15 +40,15 @@ func AcceptHandler() {
 			return
 		}
 		client := NewClient(tcpConn)
-		server.clients[getConnFd(tcpConn)] = client
+		server.clients[client.nfd] = client
 		// the connection can be read
-		server.aeloop.AddFileEvent(tcpConn, AE_READABLE, ReadQueryFromClient, client)
+		server.aeloop.AddFileEvent(client.nfd, AE_READABLE, ReadQueryFromClient, client)
 	}
 
 }
 
 // ReadQueryFromClient the 'extra' should store the client
-var ReadQueryFromClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
+var ReadQueryFromClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 	client := extra.(*GedisClient)
 	//expand query buffer's capacity if it is less than the max command capacity，
 	if len(client.queryBuf)-client.queryLen < GEDIS_MAX_CMD_BUF {
@@ -56,9 +56,9 @@ var ReadQueryFromClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, ex
 	}
 
 	// no blocked read
-	n, err := Read(conn, client.queryBuf[client.queryLen:])
+	n, err := Read(nfd, client.queryBuf[client.queryLen:])
 	if err != nil {
-		log.Printf("client %v read error: %v", conn, err)
+		log.Printf("client %v read error: %v", nfd, err)
 		freeClient(client)
 		return
 	}
@@ -79,14 +79,14 @@ var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
 	// TODO: check the dict
 }
 
-var SendReplyToClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
+var SendReplyToClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 	client := extra.(*GedisClient)
 	for client.reply.Length() > 0 {
 		rep := client.reply.First()
 		buf := []byte(rep.Val.StrVal())
 		bufLen := len(buf)
 		if client.sentLen < bufLen {
-			n, err := Write(conn, buf[client.sentLen:])
+			n, err := Write(nfd, buf[client.sentLen:])
 			if err != nil {
 				log.Println("sent reply error: ", err)
 				freeClient(client)
@@ -103,13 +103,13 @@ var SendReplyToClient FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extr
 	}
 	if client.reply.Length() == 0 { //finish write
 		client.sentLen = 0
-		loop.RemoveFileEvent(conn, AE_WRITABLE)
+		loop.RemoveFileEvent(nfd, AE_WRITABLE)
 	}
 }
 
 // AeFileEvent deal with net i/o between server and client
 type AeFileEvent struct {
-	connection *net.TCPConn
+	connection int    //net FD
 	mask       FeType //type of file event
 	proc       FileProc
 	extra      interface{}
@@ -141,12 +141,11 @@ func NewAeEventLoop() *AeEventLoop {
 }
 
 // determine the index via connection and event type
-func getFeKey(conn *net.TCPConn, mask FeType) int {
-	fd := getConnFd(conn)
+func getFeKey(nfd int, mask FeType) int {
 	if mask == AE_READABLE {
-		return fd
+		return nfd
 	}
-	return -1 * fd
+	return -1 * nfd
 }
 
 // get file descriptor by connection
@@ -167,18 +166,18 @@ func getConnFd(conn *net.TCPConn) int {
 	return FD
 }
 
-func (loop *AeEventLoop) AddFileEvent(conn *net.TCPConn, mask FeType, proc FileProc, extra interface{}) {
+func (loop *AeEventLoop) AddFileEvent(nfd int, mask FeType, proc FileProc, extra interface{}) {
 	fe := AeFileEvent{
-		connection: conn,
+		connection: nfd,
 		mask:       mask,
 		proc:       proc,
 		extra:      extra,
 	}
-	loop.FileEvents[getFeKey(conn, mask)] = &fe
+	loop.FileEvents[getFeKey(nfd, mask)] = &fe
 }
 
-func (loop *AeEventLoop) RemoveFileEvent(conn *net.TCPConn, mask FeType) {
-	delete(loop.FileEvents, getFeKey(conn, mask))
+func (loop *AeEventLoop) RemoveFileEvent(nfd int, mask FeType) {
+	delete(loop.FileEvents, getFeKey(nfd, mask))
 }
 
 func GetTimeMs() int64 {

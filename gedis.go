@@ -31,6 +31,7 @@ const (
 
 type GedisClient struct {
 	conn     *net.TCPConn
+	nfd      int
 	db       *GedisDB
 	args     []*GObj
 	reply    *List  // the type of node is string
@@ -45,6 +46,7 @@ type GedisClient struct {
 func NewClient(conn *net.TCPConn) *GedisClient {
 	var client GedisClient
 	client.conn = conn
+	client.nfd = getConnFd(conn)
 	client.db = server.db
 	client.queryBuf = make([]byte, GEDIS_IO_BUF)
 	client.reply = ListCreate(ListType{EqualFunc: EqualStr}) //the type of node is string
@@ -52,9 +54,9 @@ func NewClient(conn *net.TCPConn) *GedisClient {
 }
 
 func freeClient(client *GedisClient) {
-	delete(server.clients, getConnFd(client.conn))
-	server.aeloop.RemoveFileEvent(client.conn, AE_READABLE)
-	server.aeloop.RemoveFileEvent(client.conn, AE_WRITABLE)
+	delete(server.clients, client.nfd)
+	server.aeloop.RemoveFileEvent(client.nfd, AE_READABLE)
+	server.aeloop.RemoveFileEvent(client.nfd, AE_WRITABLE)
 	err := client.conn.Close()
 	if err != nil {
 		log.Printf("free client connection error: %v", err)
@@ -98,7 +100,7 @@ func (client *GedisClient) ProcessQueryBuf() error {
 				resetClient(client)
 			} else {
 				ProcessCommand(client)
-				server.aeloop.AddFileEvent(client.conn, AE_WRITABLE, SendReplyToClient, client)
+				server.aeloop.AddFileEvent(client.nfd, AE_WRITABLE, SendReplyToClient, client)
 			}
 		} else {
 			break //incomplete command
