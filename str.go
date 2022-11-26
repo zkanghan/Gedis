@@ -5,11 +5,11 @@ import (
 	"strconv"
 )
 
-func (o *GObj) IntVal() int {
+func (o *GObj) IntVal() int64 {
 	if o.Type_ != STR {
 		return 0
 	}
-	val, _ := strconv.Atoi(o.StrVal())
+	val, _ := strconv.ParseInt(o.StrVal(), 10, 64)
 	return val
 }
 
@@ -32,6 +32,6 @@ func HashStr(o *GObj) int64 {
 		return 0
 	}
 	h := fnv.New64()
-	h.Write([]byte(o.StrVal()))
+	_, _ = h.Write([]byte(o.StrVal()))
 	return int64(h.Sum64())
 }

@@ -14,8 +14,8 @@ const (
 
 var (
 	ERR_EXPAND        = errors.New("expand error")
-	ERR_KEY_EXIST     = errors.New("the  already exists")
-	ERR_KEY_NOT_EXIST = errors.New(" does not exist")
+	ERR_KEY_EXIST     = errors.New("the key already exists")
+	ERR_KEY_NOT_EXIST = errors.New("key does not exist")
 )
 
 type Entry struct {
