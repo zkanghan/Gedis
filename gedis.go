@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -30,7 +29,7 @@ const (
 )
 
 type GedisClient struct {
-	conn     *net.TCPConn
+	//conn     *net.TCPConn
 	nfd      int
 	db       *GedisDB
 	args     []*GObj
@@ -43,10 +42,9 @@ type GedisClient struct {
 	bulkLen  int //the length of string that need to read At present
 }
 
-func NewClient(conn *net.TCPConn) *GedisClient {
+func NewClient(nfd int) *GedisClient {
 	var client GedisClient
-	client.conn = conn
-	client.nfd = getConnFd(conn)
+	client.nfd = nfd
 	client.db = server.db
 	client.queryBuf = make([]byte, GEDIS_IO_BUF)
 	client.reply = ListCreate(ListType{EqualFunc: EqualStr}) //the type of node is string
@@ -57,10 +55,6 @@ func freeClient(client *GedisClient) {
 	delete(server.clients, client.nfd)
 	server.aeloop.RemoveFileEvent(client.nfd, AE_READABLE)
 	server.aeloop.RemoveFileEvent(client.nfd, AE_WRITABLE)
-	err := client.conn.Close()
-	if err != nil {
-		log.Printf("free client connection error: %v", err)
-	}
 }
 
 func resetClient(client *GedisClient) {
@@ -206,11 +200,11 @@ func handleBulkBuf(client *GedisClient) (bool, error) {
 }
 
 type GedisServer struct {
-	listener *net.TCPListener
-	port     int
-	db       *GedisDB
-	clients  map[int]*GedisClient
-	aeloop   *AeEventLoop //also global unique
+	sfd     int
+	port    int
+	db      *GedisDB
+	clients map[int]*GedisClient
+	aeloop  *AeEventLoop //also global unique
 }
 
 type CommandProc func(client *GedisClient)
@@ -362,7 +356,8 @@ func main() {
 	if err != nil {
 		log.Println("init server error: ", err)
 	}
-	server.aeloop.AddTimeEvent(AE_NORNAL, 100, ServerCron, nil)
+	server.aeloop.AddTimeEvent(AE_NORNAL, 1, ServerCron, nil)
+	server.aeloop.AddFileEvent(server.sfd, AE_READABLE, AcceptHandler, nil)
 	log.Println("gedis server is up")
-	server.aeloop.AeMain(AcceptHandler)
+	server.aeloop.AeMain()
 }

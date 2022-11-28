@@ -1,10 +1,5 @@
 package main
 
-import (
-	"errors"
-	"net"
-)
-
 const (
 	PORT = ":8888"
 )
@@ -13,23 +8,19 @@ const (
 var server GedisServer
 
 func InitServer() error {
-	l, err := net.Listen("tcp", PORT)
-	if err != nil {
-		return err
-	}
-	tcpListener, ok := l.(*net.TCPListener)
-	if !ok {
-		return errors.New("listener is not tcp")
-	}
 	server = GedisServer{
-		listener: tcpListener,
-		port:     8888,
+		port: 8888,
 		db: &GedisDB{
 			data:   NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
 			expire: NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
 		},
 		clients: make(map[int]*GedisClient),
-		aeloop:  NewAeEventLoop(),
 	}
-	return nil
+	var err error
+	server.aeloop, err = NewAeEventLoop()
+	if err != nil {
+		return err
+	}
+	server.sfd, err = TcpServer(server.port)
+	return err
 }

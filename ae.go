@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net"
+	"syscall"
 	"time"
 )
 
@@ -18,32 +19,19 @@ const (
 	AE_ONCE   TeType = 2
 )
 
-type FileProc func(loop *AeEventLoop, nfd int, extra any)
+type FileProc func(loop *AeEventLoop, fd int, extra any)
 type TimeProc func(loop *AeEventLoop, id int, extra any)
 
-// AcceptHandler blocked to wait for connection
-func AcceptHandler() {
-	err := server.listener.SetDeadline(time.Now().Add(time.Millisecond * 1))
+var AcceptHandler FileProc = func(loop *AeEventLoop, fd int, extra any) {
+	nfd, err := Accept(server.sfd)
 	if err != nil {
-		log.Println("set listener error: ", err)
+		log.Println("accept error: ", err)
 		return
 	}
-	for {
-		tcpConn, err := server.listener.AcceptTCP()
-		if err != nil {
-			opErr := err.(*net.OpError)
-			if opErr.Timeout() {
-				return
-			}
-			//  if isn't time out error
-			log.Println("accept tcp error: ", err)
-			return
-		}
-		client := NewClient(tcpConn)
-		server.clients[client.nfd] = client
-		// the connection can be read
-		server.aeloop.AddFileEvent(client.nfd, AE_READABLE, ReadQueryFromClient, client)
-	}
+	client := NewClient(nfd)
+	server.clients[client.nfd] = client
+	// the fd can be read
+	server.aeloop.AddFileEvent(client.nfd, AE_READABLE, ReadQueryFromClient, client)
 
 }
 
@@ -109,10 +97,10 @@ var SendReplyToClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 
 // AeFileEvent deal with net i/o between server and client
 type AeFileEvent struct {
-	connection int    //net FD
-	mask       FeType //type of file event
-	proc       FileProc
-	extra      interface{}
+	fd    int    //net FD
+	mask  FeType //type of file event
+	proc  FileProc
+	extra interface{}
 }
 
 type AeTimeEvent struct {
@@ -128,19 +116,27 @@ type AeTimeEvent struct {
 type AeEventLoop struct {
 	FileEvents      map[int]*AeFileEvent
 	TimeEventsHead  *AeTimeEvent
+	efd             int //epoll fd
 	nextTimeEventID int
 	stopped         bool
 }
 
-func NewAeEventLoop() *AeEventLoop {
+func NewAeEventLoop() (*AeEventLoop, error) {
+	epollFD, err := syscall.EpollCreate1(0)
+	if err != nil {
+		return nil, err
+	}
 	return &AeEventLoop{
 		FileEvents:      make(map[int]*AeFileEvent),
 		nextTimeEventID: 1,
+		efd:             epollFD,
 		stopped:         false,
-	}
+	}, nil
 }
 
-// determine the index via connection and event type
+var FeEvMap = [3]uint32{0, syscall.EPOLLIN, syscall.EPOLLOUT}
+
+// get the index in map by nfd and file event type
 func getFeKey(nfd int, mask FeType) int {
 	if mask == AE_READABLE {
 		return nfd
@@ -148,11 +144,11 @@ func getFeKey(nfd int, mask FeType) int {
 	return -1 * nfd
 }
 
-// get file descriptor by connection
+// get file descriptor by fd
 func getConnFd(conn *net.TCPConn) int {
 	rawConn, err := conn.SyscallConn()
 	if err != nil {
-		log.Println("get raw connection error: ", err)
+		log.Println("get raw fd error: ", err)
 		return 0
 	}
 	var FD int
@@ -160,28 +156,81 @@ func getConnFd(conn *net.TCPConn) int {
 		FD = int(fd)
 	})
 	if err != nil {
-		log.Println("executing raw connection's custom function error: ", err)
+		log.Println("executing raw fd's custom function error: ", err)
 		return 0
 	}
 	return FD
 }
 
+//gets the registered events in epoll
+func (loop *AeEventLoop) getEpollEvent(nfd int) uint32 {
+	var ev uint32 = 0
+	if loop.FileEvents[getFeKey(nfd, AE_READABLE)] != nil {
+		ev |= FeEvMap[AE_READABLE]
+	}
+	if loop.FileEvents[getFeKey(nfd, AE_WRITABLE)] != nil {
+		ev |= FeEvMap[AE_WRITABLE]
+	}
+	return ev
+}
+
 func (loop *AeEventLoop) AddFileEvent(nfd int, mask FeType, proc FileProc, extra interface{}) {
+	// epoll ctl
+	op := syscall.EPOLL_CTL_ADD
+	ev := loop.getEpollEvent(nfd)
+	if ev != 0 {
+		op = syscall.EPOLL_CTL_MOD
+	}
+	ev |= FeEvMap[mask]
+	err := syscall.EpollCtl(loop.efd, op, nfd, &syscall.EpollEvent{Events: ev, Fd: int32(nfd)})
+	if err != nil {
+		log.Printf("epoll ctl err: %v\n", err)
+		return
+	}
+	// ae ctl
 	fe := AeFileEvent{
-		connection: nfd,
-		mask:       mask,
-		proc:       proc,
-		extra:      extra,
+		fd:    nfd,
+		mask:  mask,
+		proc:  proc,
+		extra: extra,
 	}
 	loop.FileEvents[getFeKey(nfd, mask)] = &fe
 }
 
 func (loop *AeEventLoop) RemoveFileEvent(nfd int, mask FeType) {
+	// epoll ctl
+	op := syscall.EPOLL_CTL_DEL
+	ev := loop.getEpollEvent(nfd)
+	ev ^= FeEvMap[mask]
+	if ev != 0 {
+		op = syscall.EPOLL_CTL_MOD
+	}
+	err := syscall.EpollCtl(loop.efd, op, nfd, &syscall.EpollEvent{
+		Events: ev,
+		Fd:     int32(nfd),
+	})
+	if err != nil {
+		log.Printf("epoll del err: %v\n", err)
+		return
+	}
+	//ae ctl
 	delete(loop.FileEvents, getFeKey(nfd, mask))
 }
 
 func GetTimeMs() int64 {
 	return time.Now().UnixMilli()
+}
+
+func (loop *AeEventLoop) nearestTime() int64 {
+	var nearest int64 = GetTimeMs() + 100
+	p := loop.TimeEventsHead
+	for p != nil {
+		if p.when < nearest {
+			nearest = p.when
+		}
+		p = p.next
+	}
+	return nearest
 }
 
 // AddTimeEvent insert at the head of the linked list
@@ -220,11 +269,36 @@ func (loop *AeEventLoop) RemoveTimeEvent(id int) {
 }
 
 func (loop *AeEventLoop) AeProcess() {
-
-	for _, fe := range loop.FileEvents {
-		fe.proc(loop, fe.connection, fe.extra)
+	//todo: get nearest time event
+	timeout := loop.nearestTime() - GetTimeMs()
+	// at least block 1 ms
+	if timeout <= 0 {
+		timeout = 1
+	}
+	events := [128]syscall.EpollEvent{}
+	n, err := syscall.EpollWait(loop.efd, events[:], int(timeout))
+	if err != nil && err != syscall.EINTR {
+		log.Printf("epoll wait error: %v\n", err)
+		return
 	}
 
+	// exec file event
+	for i := 0; i < n; i++ {
+		if events[i].Events&FeEvMap[AE_READABLE] != 0 {
+			fe := loop.FileEvents[getFeKey(int(events[i].Fd), AE_READABLE)]
+			if fe != nil {
+				fe.proc(loop, fe.fd, fe.extra)
+			}
+		}
+		if events[i].Events&FeEvMap[AE_WRITABLE] != 0 {
+			fe := loop.FileEvents[getFeKey(int(events[i].Fd), AE_WRITABLE)]
+			if fe != nil {
+				fe.proc(loop, fe.fd, fe.extra)
+			}
+		}
+	}
+
+	// exec time event
 	p := loop.TimeEventsHead
 	now := GetTimeMs()
 	for p != nil {
@@ -240,9 +314,8 @@ func (loop *AeEventLoop) AeProcess() {
 	}
 }
 
-func (loop *AeEventLoop) AeMain(accept func()) {
+func (loop *AeEventLoop) AeMain() {
 	for !loop.stopped {
-		accept()
 		loop.AeProcess()
 	}
 }
