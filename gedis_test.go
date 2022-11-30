@@ -15,7 +15,6 @@ func fillQuery(client *GedisClient, query string) {
 }
 
 func printArgs(client *GedisClient) {
-	//  输出处理完毕的args
 	fmt.Printf("the result: ")
 	for _, a := range client.args {
 		str := a.Val_.(string)
@@ -25,7 +24,7 @@ func printArgs(client *GedisClient) {
 }
 
 func TestHandleInlineBuf(t *testing.T) {
-	client := NewClient(nil)
+	client := NewClient(0)
 
 	fillQuery(client, "set key value\r\n")
 	ok, err := handleInlineBuf(client)
@@ -63,7 +62,7 @@ func TestHandleInlineBuf(t *testing.T) {
 }
 
 func TestHandleBulkBuf(t *testing.T) {
-	client := NewClient(nil)
+	client := NewClient(0)
 
 	//legal command
 	fillQuery(client, "*3\r\n$3\r\nset\r\n$3\r\nkey\r\n$3\r\nval\r\n")
@@ -109,10 +108,13 @@ func TestHandleBulkBuf(t *testing.T) {
 	printArgs(client)
 }
 
-func TestGedisClient_ProcessQueryBuf(t *testing.T) {
-	client := NewClient(nil)
+func TestProcessQueryBuf(t *testing.T) {
+	err := InitServer()
+	assert.Nil(t, err)
+
+	client := NewClient(0)
 	fillQuery(client, "*3\r\n$3\r\nset\r\n$3\r\nkey\r\n$3\r\nval\r\n")
-	err := client.ProcessQueryBuf()
+	err = client.ProcessQueryBuf()
 	assert.Nil(t, err)
 	assert.Equal(t, 3, len(client.args))
 

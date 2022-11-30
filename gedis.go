@@ -35,8 +35,8 @@ type GedisClient struct {
 	args     []*GObj
 	reply    *List  // the type of node is string
 	sentLen  int    //the length that has been sent
-	queryBuf []byte //读取缓冲区
-	queryLen int    //已读的长度
+	queryBuf []byte //client buffer
+	queryLen int    //the effective length of the buffer
 	cmdType  CmdType
 	bulkCnt  int //the number of bulk strings to be read
 	bulkLen  int //the length of string that need to read At present
@@ -55,6 +55,10 @@ func freeClient(client *GedisClient) {
 	delete(server.clients, client.nfd)
 	server.aeloop.RemoveFileEvent(client.nfd, AE_READABLE)
 	server.aeloop.RemoveFileEvent(client.nfd, AE_WRITABLE)
+
+	if err := Close(client.nfd); err != nil {
+		log.Printf("close client conn error: %v ", err)
+	}
 }
 
 func resetClient(client *GedisClient) {
@@ -192,7 +196,6 @@ func handleBulkBuf(client *GedisClient) (bool, error) {
 		index := client.bulkLen
 		client.args[len(client.args)-client.bulkCnt] = NewObject(STR, string(client.queryBuf[:index]))
 		client.skipCRLF(index)
-		//reset client
 		client.bulkLen = 0
 		client.bulkCnt -= 1
 	}
