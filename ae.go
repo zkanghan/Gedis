@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"net"
 	"syscall"
 	"time"
 )
@@ -30,6 +29,13 @@ var AcceptHandler FileProc = func(loop *AeEventLoop, fd int, extra any) {
 	}
 	client := NewClient(nfd)
 	server.clients[client.nfd] = client
+	//check max clients number limit
+	if len(server.clients) > MAX_CLIENTS {
+		errMsg := []byte("-ERR max number of clients reached\r\n")
+		// it's a best effort error message, so don't check write errors
+		_, _ = Write(client.nfd, errMsg)
+		freeClient(client)
+	}
 	// the fd can be read
 	server.aeloop.AddFileEvent(client.nfd, AE_READABLE, ReadQueryFromClient, client)
 
@@ -65,6 +71,7 @@ var ReadQueryFromClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 
 var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
 	// TODO: check the dict
+	// TODO: save if needed
 }
 
 var SendReplyToClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
@@ -97,8 +104,8 @@ var SendReplyToClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 
 // AeFileEvent deal with net i/o between server and client
 type AeFileEvent struct {
-	fd    int    //net FD
-	mask  FeType //type of file event
+	fd    int
+	mask  FeType
 	proc  FileProc
 	extra interface{}
 }
@@ -142,24 +149,6 @@ func getFeKey(nfd int, mask FeType) int {
 		return nfd
 	}
 	return -1 * nfd
-}
-
-// get file descriptor by fd
-func getConnFd(conn *net.TCPConn) int {
-	rawConn, err := conn.SyscallConn()
-	if err != nil {
-		log.Println("get raw fd error: ", err)
-		return 0
-	}
-	var FD int
-	err = rawConn.Control(func(fd uintptr) {
-		FD = int(fd)
-	})
-	if err != nil {
-		log.Println("executing raw fd's custom function error: ", err)
-		return 0
-	}
-	return FD
 }
 
 //gets the registered events in epoll
@@ -269,7 +258,6 @@ func (loop *AeEventLoop) RemoveTimeEvent(id int) {
 }
 
 func (loop *AeEventLoop) AeProcess() {
-	//todo: get nearest time event
 	timeout := loop.nearestTime() - GetTimeMs()
 	// at least block 1 ms
 	if timeout <= 0 {

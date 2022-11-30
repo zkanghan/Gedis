@@ -1,7 +1,8 @@
 package main
 
 const (
-	PORT = ":8888"
+	PORT        int = 8888
+	MAX_CLIENTS int = 10000
 )
 
 // global variable
@@ -9,7 +10,7 @@ var server GedisServer
 
 func InitServer() error {
 	server = GedisServer{
-		port: 8888,
+		port: PORT,
 		db: &GedisDB{
 			data:   NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
 			expire: NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),

@@ -3,29 +3,28 @@ package main
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"net"
 	"testing"
 	"time"
 )
 
 // writable event
-var writeProc FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
+var writeProc FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 	by := extra.([]byte)
 
-	n, err := Write(conn, by)
+	n, err := Write(nfd, by)
 	if err != nil {
 		fmt.Println("write error: ", err)
 		return
 	}
 	fmt.Printf("write %v bytes\n", n)
-	loop.RemoveFileEvent(conn, AE_WRITABLE)
+	loop.RemoveFileEvent(nfd, AE_WRITABLE)
 	return
 }
 
-var readProc FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
+var readProc FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 	b := make([]byte, 11)
 	defer fmt.Println("readProc end")
-	n, err := Read(conn, b)
+	n, err := Read(nfd, b)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -34,28 +33,17 @@ var readProc FileProc = func(loop *AeEventLoop, conn *net.TCPConn, extra any) {
 		return
 	}
 	fmt.Printf("read %v bytes\n", n)
-	loop.AddFileEvent(conn, AE_WRITABLE, writeProc, b)
+	loop.AddFileEvent(nfd, AE_WRITABLE, writeProc, b)
 	return
 }
 
-func ac() {
-	err := server.listener.SetDeadline(time.Now().Add(time.Millisecond * 12))
+var ac FileProc = func(loop *AeEventLoop, fd int, extra any) {
+	nfd, err := Accept(fd)
 	if err != nil {
-		fmt.Println("set listener error: ", err)
+		fmt.Println("accept error: ", err)
 		return
 	}
-	for {
-		tcpConn, err := server.listener.AcceptTCP()
-		if err != nil {
-			opErr := err.(*net.OpError)
-			if opErr.Timeout() { //expected read time out error
-				return
-			}
-			fmt.Printf("%+v\n", err)
-			return
-		}
-		server.aeloop.AddFileEvent(tcpConn, AE_READABLE, readProc, nil)
-	}
+	loop.AddFileEvent(nfd, AE_READABLE, readProc, nil)
 }
 
 var OneProc TimeProc = func(loop *AeEventLoop, id int, extra any) {
@@ -71,32 +59,36 @@ var NormalProc TimeProc = func(loop *AeEventLoop, id int, extra any) {
 }
 
 func TestAe(t *testing.T) {
-	err := InitServer()
+	loop, err := NewAeEventLoop()
+	assert.Nil(t, err)
+
+	sfd, err := TcpServer(6666)
 	assert.Nil(t, err)
 
 	wg := make(chan struct{}, 3)
-	server.aeloop.AddTimeEvent(AE_ONCE, 10, OneProc, t)
-	server.aeloop.AddTimeEvent(AE_NORNAL, 10, NormalProc, wg)
-	go server.aeloop.AeMain(ac)
+	loop.AddTimeEvent(AE_ONCE, 10, OneProc, t)
+	loop.AddTimeEvent(AE_NORNAL, 10, NormalProc, wg)
+	loop.AddFileEvent(sfd, AE_READABLE, ac, nil)
+	go loop.AeMain()
 	//  下面的充当客户端请求
-	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1%s", PORT))
+	nfd, err := Dial([4]byte{127, 0, 0, 1}, 6666)
 	assert.Nil(t, err)
 
-	tcpConn := conn.(*net.TCPConn)
 	//测试写事件
 	msg := "hello gedis"
-	n, err := Write(tcpConn, []byte(msg))
+	n, err := Write(nfd, []byte(msg))
 	assert.Nil(t, err)
 	assert.Equal(t, 11, n)
 	// 测试读事件
 	time.Sleep(time.Second)
 	b := make([]byte, 11)
-	n, err = Read(tcpConn, b)
+	n, err = Read(nfd, b)
 	assert.Nil(t, err)
 	assert.Equal(t, 11, n)
 
 	<-wg
 	<-wg
 	<-wg
-	server.aeloop.stopped = true
+
+	loop.stopped = true
 }
