@@ -3,39 +3,56 @@ package main
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"net"
 	"testing"
 )
 
+func serve(a, b, c chan struct{}) {
+	sfd, err := TcpServer(6666)
+	if err != nil {
+		fmt.Println("tcpServe error:", err)
+	}
+	fmt.Println("server ready")
+	a <- struct{}{}
+	<-b
+	nfd, err := Accept(sfd)
+	if err != nil {
+		fmt.Println("accept error: ", err)
+	}
+	fmt.Println("accept nfd: ", nfd)
+	buf := make([]byte, 11)
+	n, err := Read(nfd, buf)
+	if err != nil {
+		fmt.Println("read error:", err)
+	}
+	fmt.Printf("read %d bytes\n", n)
+	n, err = Write(nfd, buf)
+	if err != nil {
+		fmt.Println("write error:", err)
+	}
+	fmt.Printf("write %d bytes\n", n)
+	c <- struct{}{}
+}
+
 func TestNet(t *testing.T) {
-	err := InitServer()
-	assert.Nil(t, err)
-	fmt.Println("blocking...")
-	tcpConn, err := server.listener.AcceptTCP()
-	assert.Nil(t, err)
+	a, b, c := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go serve(a, b, c)
+	<-a
 
-	fd := getConnFd(tcpConn)
-
-	b := make([]byte, 20)
-	n, err := Read(tcpConn, b)
+	nfd, err := Dial([4]byte{127, 0, 0, 1}, 6666)
 	assert.Nil(t, err)
-	assert.Equal(t, 0, n)
+	fmt.Println("dial nfd :", nfd)
+	b <- struct{}{}
 
-	n, err = Read(tcpConn, b)
+	n, err := Write(nfd, []byte("hello gedis"))
 	assert.Nil(t, err)
-	assert.Equal(t, 0, n)
+	assert.Equal(t, 11, n)
+	<-c //wait for server write
 
-	b = []byte("hello gedis")
-	n, err = Write(tcpConn, b)
+	buf := make([]byte, 11)
+	n, err = Read(nfd, buf)
 	assert.Nil(t, err)
 	assert.Equal(t, 11, n)
 
-	nfd := getConnFd(tcpConn)
-	assert.Equal(t, fd, nfd)
-}
-
-func TestNet2(t *testing.T) {
-	_, err := net.Dial("tcp", "127.0.0.1:8888")
+	err = Close(nfd)
 	assert.Nil(t, err)
-
 }

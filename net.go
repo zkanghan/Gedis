@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"syscall"
 )
@@ -33,7 +34,7 @@ func Accept(fd int) (int, error) {
 func Dial(host [4]byte, port int) (int, error) {
 	sfd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
 	if err != nil {
-		log.Printf("init socket error: %#v \n", err)
+		log.Printf("init socket error: %v \n", err)
 		return -1, err
 	}
 	addr := syscall.SockaddrInet4{
@@ -41,6 +42,7 @@ func Dial(host [4]byte, port int) (int, error) {
 		Addr: host,
 	}
 	if err = syscall.Connect(sfd, &addr); err != nil {
+		fmt.Println(err)
 		_ = syscall.Close(sfd)
 		return -1, err
 	}
@@ -50,29 +52,31 @@ func Dial(host [4]byte, port int) (int, error) {
 func TcpServer(port int) (int, error) {
 	sfd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
 	if err != nil {
-		log.Printf("init socket error: %#v \n", err)
+		log.Printf("init socket error: %v \n", err)
 		return -1, err
 	}
 	//set reuse port
-	//err = syscall.SetsockoptInt(sfd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, port)
-	//if err != nil {
-	//	log.Printf("set socket reuse port error: %#v \n", err)
-	//	_ = syscall.Close(sfd)
-	//	return -1, err
-	//}
+	err = syscall.SetsockoptInt(sfd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, port)
+	if err != nil {
+		log.Printf("set socket reuse port error: %v \n", err)
+		_ = syscall.Close(sfd)
+		return -1, err
+	}
 	addr := syscall.SockaddrInet4{Port: port}
 	if err = syscall.Bind(sfd, &addr); err != nil {
-		log.Printf("bind port error %#v \n", err)
+		log.Printf("bind port error %v \n", err)
 		_ = syscall.Close(sfd)
 		return -1, err
 	}
 
 	if err = syscall.Listen(sfd, syscall.SOMAXCONN); err != nil {
-		log.Printf("listen socket error %#v \n", err)
+		log.Printf("listen socket error %v \n", err)
 		_ = syscall.Close(sfd)
 		return -1, err
 	}
 	return sfd, nil
 }
 
-//TODO: use epoll
+func Close(fd int) error {
+	return syscall.Close(fd)
+}
