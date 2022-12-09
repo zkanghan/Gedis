@@ -44,12 +44,76 @@ type Dict struct {
 	rehashIndex int64
 	HTables     [2]*hTable
 	DictType
+	IteratorCnt int
+}
+
+type DictIterator struct {
+	d         *Dict
+	table     int8
+	index     int64
+	entry     *Entry
+	nextEntry *Entry
+	safe      bool
+}
+
+func NewDictSafeIterator(dict *Dict) *DictIterator {
+	return &DictIterator{
+		d:         dict,
+		table:     0,
+		index:     -1,
+		entry:     nil,
+		nextEntry: nil,
+		safe:      true,
+	}
+}
+
+func (iter *DictIterator) DictNext() *Entry {
+	for {
+
+		if iter.entry == nil {
+			ht := iter.d.HTables[iter.table]
+
+			//if the first iteration
+			if iter.index == -1 && iter.table == 0 {
+				iter.d.IteratorCnt++
+			}
+
+			iter.index++
+			// the entry list has been traversed
+			if iter.index >= ht.size {
+				if iter.d.isRehashing() && iter.table == 0 {
+					iter.table++
+					iter.index = 0
+					ht = iter.d.HTables[1]
+				} else {
+					break
+				}
+			}
+			iter.entry = ht.table[iter.index]
+
+		} else {
+			iter.entry = iter.nextEntry
+		}
+
+		if iter.entry != nil {
+			iter.nextEntry = iter.entry.next
+			return iter.entry
+		}
+	}
+	return nil
+}
+
+func ReleaseIterator(iter *DictIterator) {
+	if !(iter.index == -1 && iter.table == 0) {
+		iter.d.IteratorCnt--
+	}
 }
 
 func NewDict(dictType DictType) *Dict {
 	return &Dict{
 		DictType:    dictType,
 		rehashIndex: -1,
+		IteratorCnt: 0,
 	}
 }
 
@@ -58,6 +122,10 @@ func (dict *Dict) isRehashing() bool {
 }
 
 func (dict *Dict) rehashStep() {
+	//pause the rehash if exists safe iterator
+	if dict.IteratorCnt != 0 {
+		return
+	}
 	dict.rehash(DEFAULT_STEP)
 }
 
@@ -172,8 +240,7 @@ func (dict *Dict) getKeyIndex(key *GObj) int64 {
 	return idx
 }
 
-// AddRaw Low level add.
-// this method adds the entry but instead of setting a value returns the dictEntry structure to the user
+// low level add. this method adds the entry but instead of setting a value returns the dictEntry structure to the user
 // Return values:
 // if key already exists NULL is returned.
 // if key was added, the hash entry is returned to be manipulated by the caller.

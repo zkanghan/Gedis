@@ -65,3 +65,48 @@ func TestRehash(t *testing.T) {
 	assert.Equal(t, nextPower(dict.HTables[0].used*EXPAND_RATION), dict.HTables[0].size)
 	assert.Nil(t, dict.HTables[1])
 }
+
+func TestDictIterator(t *testing.T) {
+	dict := NewDict(DictType{HashStr, EqualStr})
+
+	cnt := int(INIT_SIZE * (FORCE_REHASH_RATION + 1))
+	m := make(map[string]int)
+	for i := 0; i < cnt; i++ {
+		key := NewObject(STR, fmt.Sprintf("k%d", i))
+		val := NewObject(STR, fmt.Sprintf("v%d", i))
+		m[key.StrVal()]++
+		err := dict.Add(key, val)
+		assert.Nil(t, err)
+	}
+
+	it := NewDictSafeIterator(dict)
+	Icnt := 0
+	for e := it.DictNext(); e != nil; e = it.DictNext() {
+		Icnt++
+		assert.Equal(t, 1, m[e.Key.StrVal()])
+	}
+	assert.Equal(t, 24, Icnt)
+
+	err := dict.Add(NewObject(STR, "kkk"), NewObject(STR, "vvv"))
+	assert.Nil(t, err)
+
+	for i := 0; i < cnt; i++ {
+		key := NewObject(STR, fmt.Sprintf("k%d", i))
+		val := dict.Get(key)
+		assert.Equal(t, val.StrVal(), fmt.Sprintf("v%d", i))
+	}
+
+	assert.Equal(t, int64(24), dict.HTables[0].used)
+	assert.Equal(t, int64(64), dict.HTables[1].size)
+	assert.Equal(t, int64(1), dict.HTables[1].used)
+
+	ReleaseIterator(it)
+	for i := 0; i < cnt; i++ {
+		key := NewObject(STR, fmt.Sprintf("k%d", i))
+		val := dict.Get(key)
+		assert.Equal(t, val.StrVal(), fmt.Sprintf("v%d", i))
+	}
+
+	assert.Equal(t, int64(25), dict.HTables[0].used)
+	assert.Equal(t, int64(64), dict.HTables[0].size)
+}
