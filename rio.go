@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -23,7 +24,7 @@ type RioFile struct {
 func NewRioWithFile(f *os.File) *RioFile {
 	return &RioFile{
 		processedBytes:     0,
-		MaxProcessingChunk: 1024,
+		MaxProcessingChunk: 0, // 0 means no limit
 		file: struct {
 			fp       *os.File
 			buffered int
@@ -114,7 +115,9 @@ func fileWrite(r *RioFile, buf []byte, len int) error {
 func fileRead(r *RioFile, buf []byte, len int) error {
 	_, err := r.file.fp.Read(buf[:len])
 	if err != nil {
-		log.Printf("read file error: %v \n", err)
+		if err != io.EOF {
+			log.Printf("read file error: %v \n", err)
+		}
 		return err
 	}
 	return nil
