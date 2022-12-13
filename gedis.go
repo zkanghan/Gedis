@@ -208,6 +208,10 @@ type GedisServer struct {
 	db      *GedisDB
 	clients map[int]*GedisClient
 	aeloop  *AeEventLoop //also global unique
+
+	//   AOF
+	aofFileName       string
+	aofRewriteMinSize int64
 }
 
 type CommandProc func(client *GedisClient)
@@ -222,6 +226,7 @@ var cmdTable = []GedisCommand{
 	{"set", 3, setCommand},
 	{"expire", 3, expireCommand},
 	{"ttl", 2, ttlCommand},
+	{"pexpireat", 3, pexpireatCommand},
 	//TODO: list command & hash command
 }
 
@@ -254,6 +259,10 @@ var setCommand CommandProc = func(client *GedisClient) {
 	server.db.data.Set(key, val)
 	_ = removeExpire(key)
 	client.AddReply(REPLY_OK)
+}
+
+func loadDataFromDisk() error {
+	return loadAppendOnlyFile(server.aofFileName)
 }
 
 func lookUpCommand(name string) *GedisCommand {
@@ -352,6 +361,18 @@ var ttlCommand CommandProc = func(client *GedisClient) {
 	key := client.args[1]
 	ttl := getExpire(key)
 	client.AddReply(fmt.Sprintf(":%d\r\n", ttl))
+}
+
+var pexpireatCommand CommandProc = func(client *GedisClient) {
+	key := client.args[1]
+	exTime := client.args[2].IntVal()
+	//invalid expire time or key
+	if server.db.data.Find(key) == nil || exTime <= 0 {
+		client.AddReply(REPLY_ZERO)
+		return
+	}
+	setExpire(key, client.args[2].StrVal())
+	client.AddReply(REPLY_ONE)
 }
 
 func main() {
