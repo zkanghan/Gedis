@@ -71,7 +71,33 @@ var ReadQueryFromClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 
 var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
 	// TODO: check the dict
-	// TODO: save if needed
+
+	if server.aofRewriteChan != nil {
+		select {
+		case flag := <-server.aofRewriteChan:
+			close(server.aofRewriteChan)
+			server.aofRewriteChan = nil
+			bgRewriteDoneHandler(flag)
+		default:
+			break
+		}
+	}
+
+	//If there is not a background saving/rewrite in progress check if we have to save/rewrite now
+	if server.aofRewriteChan == nil && server.aofRewritePerc > 0 && server.aofCurrentSize > server.aofRewriteMinSize {
+		base := int64(1)
+		if server.aofRewriteBaseSize > 0 {
+			base = server.aofRewriteBaseSize
+		}
+
+		growth := (server.aofCurrentSize * 100 / base) - 100
+		if growth >= server.aofRewritePerc {
+			_ = rewriteAppendOnlyFileBackground()
+		}
+	}
+
+	flushAppendOnlyFile()
+
 }
 
 var SendReplyToClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
