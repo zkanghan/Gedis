@@ -210,8 +210,14 @@ type GedisServer struct {
 	aeloop  *AeEventLoop //also global unique
 
 	//   AOF
-	aofFileName       string
-	aofRewriteMinSize int64
+	aofFileName        string // Name of the AOF file
+	aofRewriteMinSize  int64  // the AOF file is at least N bytes
+	aofCurrentSize     int64  // AOF current size
+	aofRewritePerc     int64  // Rewrite AOF if growth > it
+	aofRewriteBaseSize int64  // AOF size on latest startup or rewrite
+	aofBuf             string // AOF buffer, written before entering the event loop
+	aofRewriteChan     chan bool
+	aofRewriteBuf      []byte //Hold changes during an AOF rewrite
 }
 
 type CommandProc func(client *GedisClient)
@@ -287,7 +293,14 @@ func ProcessCommand(client *GedisClient) {
 	}
 	//exec the command
 	cmd.proc(client)
+	//persist the command
+	propagate(cmd, client.args)
 	resetClient(client)
+}
+
+//propagate the specified command to AOF
+func propagate(cmd *GedisCommand, args []*GObj) {
+	_ = feedAppendOnlyFile(cmd, args)
 }
 
 type GedisDB struct {
@@ -378,7 +391,10 @@ var pexpireatCommand CommandProc = func(client *GedisClient) {
 func main() {
 	err := InitServer()
 	if err != nil {
-		log.Println("init server error: ", err)
+		panic("init server error: " + err.Error())
+	}
+	if err = loadDataFromDisk(); err != nil {
+		panic("load data from disk error: " + err.Error())
 	}
 	server.aeloop.AddTimeEvent(AE_NORNAL, 1, ServerCron, nil)
 	server.aeloop.AddFileEvent(server.sfd, AE_READABLE, AcceptHandler, nil)
