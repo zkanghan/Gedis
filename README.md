@@ -11,7 +11,16 @@
 - _Incremental rehash_
 - _Redis Serialization Protocol_
 - _TTL_
+- AOF and AOF Rewrite
 
+### Supported Command
+- **String**
+  - set
+  - get
+- **Key**
+  - expire
+  - pexpireat
+  - ttl
 
 ## Benchmark
 **Environment:**
@@ -33,8 +42,3 @@ benchmark on **redis**:
 SET: 27085.59 requests per second
 GET: 27654.87 requests per second
 ```
-
-**Todo** :
-
-- [ ] AOF
-- [ ] AOF rewrite
