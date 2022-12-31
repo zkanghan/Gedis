@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"math"
+	"math/rand"
 )
 
 const (
@@ -353,4 +354,60 @@ func (dict *Dict) Delete(key *GObj) error {
 		}
 	}
 	return ERR_KEY_NOT_EXIST
+}
+
+func (dict *Dict) Size() int64 {
+	if dict.isRehashing() {
+		return dict.HTables[0].used + dict.HTables[1].used
+	}
+	if dict.HTables[0] == nil {
+		return 0
+	}
+	return dict.HTables[0].used
+}
+
+// return a random entry from the hash table.
+func (dict *Dict) GetRandomKey() *Entry {
+	if dict.Size() == 0 {
+		return nil
+	}
+	if dict.isRehashing() {
+		dict.rehashStep()
+	}
+
+	var h int64
+	var he *Entry
+	if dict.isRehashing() {
+		for he == nil {
+			h = rand.Int63() % (dict.HTables[0].size + dict.HTables[1].size)
+			if h >= dict.HTables[0].size {
+				he = dict.HTables[1].table[h-dict.HTables[0].size]
+			} else {
+				he = dict.HTables[0].table[h]
+			}
+		}
+	} else { //only look up entry from ht[0]
+		for he == nil {
+			h = rand.Int63() & dict.HTables[0].sizeMask
+			he = dict.HTables[0].table[h]
+		}
+	}
+
+	//now we found a non-empty bucket,we need to get a random element from the list.
+	//we will count the elements and select a random index.
+	listLen := int64(0)
+	orighe := he
+	for he != nil {
+		he = he.next
+		listLen++
+	}
+
+	listEle := rand.Int63() % listLen
+	he = orighe
+
+	for listEle > 0 {
+		he = he.next
+		listEle--
+	}
+	return he
 }
