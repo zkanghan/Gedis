@@ -110,3 +110,31 @@ func TestDictIterator(t *testing.T) {
 	assert.Equal(t, int64(25), dict.HTables[0].used)
 	assert.Equal(t, int64(64), dict.HTables[0].size)
 }
+
+func TestDict_GetRandomKey(t *testing.T) {
+	dict := NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr})
+
+	assert.Nil(t, dict.GetRandomKey())
+
+	cnt := int(INIT_SIZE * (FORCE_REHASH_RATION + 1))
+	m := make(map[string]string)
+	for i := 0; i < cnt; i++ {
+		key := NewObject(STR, fmt.Sprintf("k%d", i))
+		val := NewObject(STR, fmt.Sprintf("v%d", i))
+		m[key.StrVal()] = val.StrVal()
+		err := dict.Add(key, val)
+		assert.Nil(t, err)
+	}
+
+	for i := 0; i < 10000; i++ {
+		assert.NotEqual(t, "", m[dict.GetRandomKey().Key.StrVal()])
+	}
+
+	err := dict.Add(NewObject(STR, "name"), NewObject(STR, "zkh"))
+	m["name"] = "zkh"
+	assert.Nil(t, err)
+
+	for i := 0; i < 10000; i++ {
+		assert.NotEqual(t, "", m[dict.GetRandomKey().Key.StrVal()])
+	}
+}
