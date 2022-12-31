@@ -24,8 +24,9 @@ const (
 	CMD_INLINE  CmdType = 1
 	CMD_BULK    CmdType = 2
 
-	GEDIS_IO_BUF      int = 1024 * 8
-	GEDIS_MAX_CMD_BUF int = 1024 * 4
+	GEDIS_IO_BUF                 int   = 1024 * 8
+	GEDIS_MAX_CMD_BUF            int   = 1024 * 4
+	GEDIS_EXPIRELOOKUPS_PER_CRON int64 = 100
 )
 
 type GedisClient struct {

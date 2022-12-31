@@ -70,8 +70,26 @@ var ReadQueryFromClient FileProc = func(loop *AeEventLoop, nfd int, extra any) {
 }
 
 var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
-	// TODO: check the dict
+	// try to expire a few timed out keys
+	d := server.db.expire
+	num, now := d.Size(), GetTimeMs()
 
+	if num > 0 {
+		if num > GEDIS_EXPIRELOOKUPS_PER_CRON {
+			num = GEDIS_EXPIRELOOKUPS_PER_CRON
+		}
+		for num > 0 {
+			de := d.GetRandomKey()
+			if de == nil {
+				break
+			}
+			if now > de.Val.IntVal() {
+				_ = d.Delete(de.Key)
+			}
+		}
+	}
+
+	//check is background AOF rewrite finished
 	if server.aofRewriteChan != nil {
 		select {
 		case flag := <-server.aofRewriteChan:
@@ -83,7 +101,7 @@ var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
 		}
 	}
 
-	//If there is not a background saving/rewrite in progress check if we have to save/rewrite now
+	//If there is not a background saving/rewrite in progress, check if we have to save/rewrite now
 	if server.aofRewriteChan == nil && server.aofRewritePerc > 0 && server.aofCurrentSize > server.aofRewriteMinSize {
 		base := int64(1)
 		if server.aofRewriteBaseSize > 0 {
