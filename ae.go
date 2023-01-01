@@ -84,8 +84,10 @@ var ServerCron TimeProc = func(loop *AeEventLoop, id int, extra any) {
 				break
 			}
 			if now > de.Val.IntVal() {
+				_ = server.db.data.Delete(de.Key)
 				_ = d.Delete(de.Key)
 			}
+			num--
 		}
 	}
 
