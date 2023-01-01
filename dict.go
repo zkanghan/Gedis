@@ -344,6 +344,7 @@ func (dict *Dict) Delete(key *GObj) error {
 				} else {
 					pre.next = e.next
 				}
+				dict.HTables[i].used--
 				return nil
 			}
 			pre = e
