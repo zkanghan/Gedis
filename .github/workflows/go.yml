@@ -25,6 +25,8 @@ jobs:
       run: go build -v ./...
       
     - name: Run
-      run: go run gedis
+      run: echo pwd
+           go run ./gedis
+      
 
 
