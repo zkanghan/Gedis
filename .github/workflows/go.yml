@@ -28,7 +28,7 @@ jobs:
       run:   nohup go run Gedis &
       
     - name: Show
-      run: cat nohup.out
+      run: ls
 
       
 
