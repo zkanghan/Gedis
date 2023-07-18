@@ -152,7 +152,7 @@ func (client *GedisClient) skipCRLF(index int) {
 //For Integers, the first byte is ":"
 //For Bulk Strings, the first byte is "$"
 //For Arrays, the first byte is "*"
-// example: SET key value  --> *3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n
+// example: set key value  --> *3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n
 func handleBulkBuf(client *GedisClient) (bool, error) {
 	if client.bulkCnt == 0 { //if first time to handle the bulk command
 		index, err := findCRLFInQuery(client)
