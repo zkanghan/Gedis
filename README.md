@@ -22,6 +22,19 @@
   - pexpireat
   - ttl
 
+## Quick Start
+
+**Get the running environment**
+```shell
+docker pull 15807140160/gedis
+docker run --name Gedis -it 15807140160/gedis
+```
+**Start Program**
+```shell
+cd Gedis
+go run Gedis
+```
+
 ## Benchmark
 **Environment:**
 
