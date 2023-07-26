@@ -9,7 +9,7 @@ const MAX_LEVEL = 32
 
 // ZElement of skip list
 type ZElement struct {
-	Member string
+	Member *GObj
 	Score  float64
 }
 
@@ -36,7 +36,7 @@ type ZSet struct {
 	Dict     Dict
 }
 
-func newZNode(member string, score float64, level int) *zNode {
+func newZNode(member *GObj, score float64, level int) *zNode {
 	return &zNode{
 		ZElement: ZElement{Member: member, Score: score},
 		backward: nil,
@@ -46,7 +46,7 @@ func newZNode(member string, score float64, level int) *zNode {
 
 func newSkipList() *zSkipList {
 	return &zSkipList{
-		header: newZNode("", 0, MAX_LEVEL),
+		header: newZNode(NewObject(STR, ""), 0, MAX_LEVEL),
 		tail:   nil,
 		level:  1,
 		length: 0,
@@ -60,7 +60,7 @@ func randomLevel() int {
 }
 
 // make sure the element not already inside before call of the method
-func (zsl *zSkipList) insert(member string, score float64) *zNode {
+func (zsl *zSkipList) insert(member *GObj, score float64) *zNode {
 	update, rank := make([]*zNode, MAX_LEVEL), make([]int64, MAX_LEVEL)
 
 	node := zsl.header
@@ -70,7 +70,7 @@ func (zsl *zSkipList) insert(member string, score float64) *zNode {
 			rank[i] = rank[i+1]
 		}
 		for node.level[i].forward != nil && (node.level[i].forward.Score < score ||
-			(node.level[i].forward.Score < score && node.level[i].forward.Member < member)) {
+			(node.level[i].forward.Score < score && CompareStr(node.level[i].forward.Member, member))) {
 			rank[i] += node.level[i].span
 			node = node.level[i].forward
 		}
@@ -134,12 +134,34 @@ func (zsl *zSkipList) deleteNode(node *zNode, update []*zNode) {
 	zsl.length--
 }
 
-func (zsl *zSkipList) updateScore(member string, curScore, newScore float64) *zNode {
+// Delete an element with matching score/object from the skip list.
+func (zsl *zSkipList) delete(score float64, member *GObj) {
+	node := zsl.header
+	update := make([]*zNode, MAX_LEVEL)
+	for i := zsl.level - 1; i >= 0; i-- {
+		for node.level[i].forward != nil && (node.level[i].forward.Score < score ||
+			(node.level[i].forward.Score == score && CompareStr(node.level[i].forward.Member, member))) {
+			node = node.level[i].forward
+		}
+		update[i] = node
+	}
+
+	/* We may have multiple elements with the same score, what we need
+	 * is to find the element with both the right score and object.
+	 */
+
+	node = node.level[0].forward
+	if node != nil && EqualStr(node.Member, member) {
+		zsl.deleteNode(node, update)
+	}
+}
+
+func (zsl *zSkipList) updateScore(member *GObj, curScore, newScore float64) *zNode {
 	node := zsl.header
 	update := make([]*zNode, MAX_LEVEL)
 	for i := zsl.level - 1; i >= 0; i-- {
 		for node.level[i].forward != nil && (node.level[i].forward.Score < curScore ||
-			(node.level[i].forward.Score == curScore && node.level[i].forward.Member < member)) {
+			(node.level[i].forward.Score == curScore && CompareStr(node.level[i].forward.Member, member))) {
 			node = node.level[i].forward
 		}
 		update[i] = node
@@ -160,4 +182,20 @@ func (zsl *zSkipList) updateScore(member string, curScore, newScore float64) *zN
 	newNode := zsl.insert(node.Member, newScore)
 
 	return newNode
+}
+
+func (zsl *zSkipList) getElementByRank(rank int64) *zNode {
+	node := zsl.header
+	traversed := int64(0)
+	for i := zsl.level - 1; i >= 0; i-- {
+		for node.level[i].forward != nil && traversed+node.level[i].span <= rank {
+			traversed += node.level[i].span
+			node = node.level[i].forward
+		}
+
+		if traversed == rank {
+			return node
+		}
+	}
+	return nil
 }

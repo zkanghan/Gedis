@@ -35,3 +35,10 @@ func HashStr(o *GObj) int64 {
 	_, _ = h.Write([]byte(o.StrVal()))
 	return int64(h.Sum64())
 }
+
+func CompareStr(a, b *GObj) bool {
+	if a.Type_ != STR || b.Type_ != STR {
+		return false
+	}
+	return a.StrVal() < b.StrVal()
+}

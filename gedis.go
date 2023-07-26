@@ -234,7 +234,26 @@ var cmdTable = []GedisCommand{
 	{"expire", 3, expireCommand},
 	{"ttl", 2, ttlCommand},
 	{"pexpireat", 3, pexpireatCommand},
-	//TODO: list command & hash command
+	//TODO: list command
+	{"lpush", 3, nil},
+	{"rpush", 3, nil},
+	{"lpop", 3, nil},
+	{"rpop", 3, nil},
+	{"llen", 2, nil},
+	{"lindex", 3, nil},
+	{"lrange", 4, nil},
+	{"lrem", 4, nil},
+	//TODO: hash command
+	{"hget", 3, nil},
+	{"hset", 4, nil},
+	{"hdel", 3, nil},
+	{"hgetall", 2, nil},
+	// TODO: zset commmad
+	{"zadd", 4, nil},
+	{"zincrby", 4, nil},
+	{"zrem", 3, nil},
+	{"zrange", 4, nil},
+	{"zrevrange", 4, nil},
 }
 
 //get a string
