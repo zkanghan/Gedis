@@ -32,16 +32,32 @@ type zSkipList struct {
 }
 
 type ZSet struct {
-	SkipList zSkipList
-	Dict     Dict
+	SkipList *zSkipList
+	Dict     *Dict
+}
+
+func NewZSet() *ZSet {
+	return &ZSet{
+		SkipList: newSkipList(),
+		Dict:     NewDict(DictType{HashFunc: HashStr, EqualFunc: EqualStr}),
+	}
+}
+
+func (z *ZSet) Length() int64 {
+	return z.SkipList.length
 }
 
 func newZNode(member *GObj, score float64, level int) *zNode {
-	return &zNode{
+	node := &zNode{
 		ZElement: ZElement{Member: member, Score: score},
 		backward: nil,
 		level:    make([]*ZLevel, level),
 	}
+
+	for i := 0; i < level; i++ {
+		node.level[i] = &ZLevel{}
+	}
+	return node
 }
 
 func newSkipList() *zSkipList {
@@ -64,9 +80,10 @@ func (zsl *zSkipList) insert(member *GObj, score float64) *zNode {
 	update, rank := make([]*zNode, MAX_LEVEL), make([]int64, MAX_LEVEL)
 
 	node := zsl.header
-	for i := MAX_LEVEL - 1; i >= 0; i-- {
-		rank[i] = 0
-		if i != zsl.level-1 {
+	for i := zsl.level - 1; i >= 0; i-- {
+		if i == zsl.level-1 {
+			rank[i] = 0
+		} else {
 			rank[i] = rank[i+1]
 		}
 		for node.level[i].forward != nil && (node.level[i].forward.Score < score ||

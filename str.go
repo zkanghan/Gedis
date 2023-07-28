@@ -13,6 +13,14 @@ func (o *GObj) IntVal() int64 {
 	return val
 }
 
+func (o *GObj) FloatVal() float64 {
+	if o.Type_ != STR {
+		return 0
+	}
+	val, _ := strconv.ParseFloat(o.StrVal(), 64)
+	return val
+}
+
 func (o *GObj) StrVal() string {
 	if o.Type_ != STR {
 		return ""

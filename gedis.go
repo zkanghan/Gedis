@@ -12,13 +12,14 @@ import (
 type CmdType int8
 
 const (
-	REPLY_UNKNOWN_CMD string = "-ERR unknown command\r\n"
-	REPLY_WRONG_ARITY string = "-ERR wrong number of arguments\r\n"
-	REPLY_NIL         string = "+nil\r\n"
-	REPLY_WRONG_TYPE  string = "-ERR invalid type\r\n"
-	REPLY_OK          string = "+ok\r\n"
-	REPLY_ZERO        string = ":0\r\n"
-	REPLY_ONE         string = ":1\r\n"
+	REPLY_UNKNOWN_CMD   string = "-ERR unknown command\r\n"
+	REPLY_WRONG_ARITY   string = "-ERR wrong number of arguments\r\n"
+	REPLY_NIL           string = "+nil\r\n"
+	REPLY_WRONG_TYPE    string = "-ERR invalid type\r\n"
+	REPLY_INVALID_VALUE        = "-ERR value is not an integer or out of range\n"
+	REPLY_OK            string = "+ok\r\n"
+	REPLY_ZERO          string = ":0\r\n"
+	REPLY_ONE           string = ":1\r\n"
 
 	CMD_UNKNOWN CmdType = 0
 	CMD_INLINE  CmdType = 1
@@ -69,6 +70,20 @@ func resetClient(client *GedisClient) {
 
 func (client *GedisClient) AddReply(str string) {
 	node := NewObject(STR, str)
+	client.reply.TailPush(node)
+}
+
+func (client *GedisClient) AddReplyStr(obj *GObj) {
+	if obj.Type_ != STR {
+		return
+	}
+	node := NewObject(STR, fmt.Sprintf("$%d\r\n%s\r\n", len(obj.StrVal()), obj.StrVal()))
+	client.reply.TailPush(node)
+}
+
+func (client *GedisClient) AddReplyFloat(f float64) {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	node := NewObject(STR, fmt.Sprintf("$%d\r\n%s\r\n", len(s), s))
 	client.reply.TailPush(node)
 }
 
@@ -248,12 +263,12 @@ var cmdTable = []GedisCommand{
 	{"hset", 4, nil},
 	{"hdel", 3, nil},
 	{"hgetall", 2, nil},
-	// TODO: zset commmad
-	{"zadd", 4, nil},
-	{"zincrby", 4, nil},
-	{"zrem", 3, nil},
-	{"zrange", 4, nil},
-	{"zrevrange", 4, nil},
+	/* zset commmad */
+	{"zadd", 4, zaddCommand},
+	{"zincrby", 4, zincrbyCommand},
+	{"zrem", 3, zremCommand},
+	{"zrange", 4, zrangeCommand},
+	{"zrevrange", 4, zrevrangeCommand},
 }
 
 //get a string
@@ -406,6 +421,194 @@ var pexpireatCommand CommandProc = func(client *GedisClient) {
 	}
 	setExpire(key, client.args[2].StrVal())
 	client.AddReply(REPLY_ONE)
+}
+
+var zaddCommand CommandProc = func(c *GedisClient) {
+	zaddGenericCommand(c, 0)
+}
+
+var zincrbyCommand CommandProc = func(c *GedisClient) {
+	zaddGenericCommand(c, 1)
+}
+
+var zremCommand CommandProc = func(c *GedisClient) {
+	key := c.args[1]
+	zobj := LookupKey(key)
+
+	if zobj == nil || zobj.Type_ != ZSET {
+		c.AddReply(REPLY_NIL)
+		return
+	}
+
+	if zobj.Type_ != ZSET {
+		c.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+	zset := zobj.Val_.(*ZSet)
+	deleted := 0
+	for i := 2; i < len(c.args); i++ {
+		entry := zset.Dict.Find(c.args[i])
+		if entry != nil {
+			deleted++
+			zset.SkipList.delete(entry.Val.FloatVal(), c.args[i])
+			_ = zset.Dict.Delete(c.args[i])
+		}
+	}
+
+	c.AddReply(fmt.Sprintf("%d", deleted))
+}
+
+var zrangeCommand CommandProc = func(c *GedisClient) {
+	zrangeGenericCommand(c, 0)
+}
+
+var zrevrangeCommand CommandProc = func(c *GedisClient) {
+	zrangeGenericCommand(c, 1)
+}
+
+func zrangeGenericCommand(c *GedisClient, reverse int) {
+	if len(c.args) <= 3 || len(c.args) >= 6 {
+		c.AddReply(REPLY_WRONG_ARITY)
+		return
+	}
+
+	withScores := false
+	if len(c.args) == 5 && c.args[4].StrVal() == "withscores" {
+		withScores = true
+	}
+
+	zobj := LookupKey(c.args[1])
+	if zobj == nil {
+		c.AddReply(REPLY_NIL)
+		return
+	}
+
+	if zobj.Type_ != ZSET {
+		c.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+
+	var start, end int64
+	if GetNumber(c.args[2].StrVal(), &start) != nil || GetNumber(c.args[3].StrVal(), &end) != nil {
+		c.AddReply(REPLY_INVALID_VALUE)
+		return
+	}
+	zset := zobj.Val_.(*ZSet)
+	llen := zset.Length()
+
+	if start < 0 {
+		start = llen + start
+	}
+	if end < 0 {
+		end = end + llen
+	}
+	if start < 0 {
+		start = 0
+	}
+
+	if start > end || start >= llen {
+		c.AddReply(REPLY_INVALID_VALUE)
+		return
+	}
+
+	if end >= llen {
+		end = llen - 1
+	}
+	rangeLen := start - end + 1
+	var ln *zNode
+	if reverse == 1 {
+		ln = zset.SkipList.tail
+		if start > 0 {
+			ln = zset.SkipList.getElementByRank(llen - start)
+		}
+	} else {
+		ln = zset.SkipList.header.level[0].forward
+		if start > 0 {
+			ln = zset.SkipList.getElementByRank(start + 1)
+		}
+	}
+
+	for rangeLen > 0 {
+		ele := ln.Member
+		c.AddReplyStr(ele)
+		if withScores {
+			c.AddReplyFloat(ln.Score)
+		}
+		if reverse == 1 {
+			ln = ln.backward
+		} else {
+			ln = ln.level[0].forward
+		}
+	}
+}
+
+func zaddGenericCommand(c *GedisClient, incr int) {
+	// The score-member parameter must be in pairs
+	if len(c.args)%2 == 0 {
+		c.AddReply(REPLY_WRONG_ARITY)
+		return
+	}
+
+	/* Start parsing all the scores, we need to emit any syntax error
+	 * before executing additions to the sorted set, as the command should
+	 * either execute fully or nothing at all. */
+	elements := len(c.args) / 2
+	scores := make([]float64, elements)
+	members := make([]*GObj, elements)
+	for i := 0; i < elements; i++ {
+		score, err := strconv.ParseFloat(c.args[3+i*2].StrVal(), 64)
+		if err != nil {
+			c.AddReply(REPLY_INVALID_VALUE)
+			return
+		}
+		scores[i] = score
+		members[i] = c.args[2+i*2]
+	}
+
+	key := c.args[1]
+	zobj := LookupKey(key)
+	if zobj == nil {
+		zobj = NewObject(ZSET, NewZSet())
+		_ = server.db.data.Add(key, zobj)
+	} else {
+		// check the type
+		if zobj.Type_ != ZSET {
+			c.AddReply(REPLY_WRONG_TYPE)
+			return
+		}
+	}
+
+	added, score := 0, float64(0)
+	for i := 0; i < elements; i++ {
+		zSet := zobj.Val_.(*ZSet)
+		entry := zSet.Dict.Find(members[i])
+		if entry != nil {
+			curObj := zSet.Dict.Get(members[i])
+			curScore := curObj.FloatVal()
+
+			score = scores[i]
+			if incr != 0 {
+				score += curScore
+			}
+			if curScore != score {
+				/* Re-inserted in skiplist. */
+				zSet.SkipList.delete(curScore, curObj)
+				zSet.SkipList.insert(curObj, score)
+				/* Update score */
+				zSet.Dict.Set(curObj, NewObject(STR, score))
+			}
+		} else {
+			zSet.SkipList.insert(members[i], scores[i])
+			_ = zSet.Dict.Add(members[i], NewObject(STR, scores[i]))
+			added++
+		}
+	}
+
+	if incr != 0 { /* ZINCRBY */
+		c.AddReply(fmt.Sprintf("%f", score))
+	} else { /* ZADD */
+		c.AddReply(fmt.Sprintf("%d", added))
+	}
 }
 
 func main() {
