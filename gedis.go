@@ -87,6 +87,12 @@ func (client *GedisClient) AddReplyFloat(f float64) {
 	client.reply.TailPush(node)
 }
 
+func (client *GedisClient) AddReplyInt(i int) {
+	s := strconv.Itoa(i)
+	node := NewObject(STR, fmt.Sprintf("$%d\r\n%s\r\n", len(s), s))
+	client.reply.TailPush(node)
+}
+
 func (client *GedisClient) ProcessQueryBuf() error {
 	for client.queryLen > 0 {
 		if client.cmdType == CMD_UNKNOWN { // the command have not processed currently
@@ -421,6 +427,149 @@ var pexpireatCommand CommandProc = func(client *GedisClient) {
 	}
 	setExpire(key, client.args[2].StrVal())
 	client.AddReply(REPLY_ONE)
+}
+
+func pushGenericCommand(c *GedisClient, where int) {
+	lobj := LookupKey(c.args[1])
+
+	if lobj != nil || lobj.Type_ != LIST {
+		c.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+
+	var l *List
+	if lobj == nil {
+		l = ListCreate(ListType{EqualFunc: EqualStr})
+		_ = server.db.data.Add(c.args[1], NewObject(LIST, l))
+	} else {
+		l = lobj.Val_.(*List)
+	}
+
+	push := 0
+	for i := 2; i < len(c.args); i++ {
+		l.TypePush(c.args[i], where)
+		push++
+	}
+	if push > 0 {
+		c.AddReplyInt(push)
+	}
+}
+
+func popGenericCommand(c *GedisClient, where int) {
+	lobj := LookupKey(c.args[1])
+
+	if lobj == nil || lobj.Type_ != LIST {
+		return
+	}
+
+	l := lobj.Val_.(*List)
+	val := l.TypePop(where)
+	if val == nil {
+		c.AddReply(REPLY_NIL)
+	} else {
+		c.AddReplyStr(val)
+		if l.length == 0 {
+			_ = server.db.data.Delete(lobj)
+		}
+	}
+}
+
+var lpushCommand CommandProc = func(c *GedisClient) {
+	pushGenericCommand(c, LIST_HEAD)
+}
+
+var rpushCommand CommandProc = func(c *GedisClient) {
+	pushGenericCommand(c, LIST_TAIL)
+}
+
+var lpopCommand CommandProc = func(c *GedisClient) {
+	popGenericCommand(c, LIST_HEAD)
+}
+
+var rpopCommand CommandProc = func(c *GedisClient) {
+	popGenericCommand(c, LIST_TAIL)
+}
+
+var lrangeCommand CommandProc = func(c *GedisClient) {
+	var start, end int64
+	if GetNumber(c.args[2].StrVal(), &start) != nil || GetNumber(c.args[3].StrVal(), &end) != nil {
+		c.AddReply(REPLY_INVALID_VALUE)
+		return
+	}
+	lobj := LookupKey(c.args[1])
+	if lobj == nil {
+		c.AddReply(REPLY_NIL)
+		return
+	}
+	if lobj.Type_ != LIST {
+		c.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+	l := lobj.Val_.(*List)
+	llen := int64(l.Length())
+	if start < 0 {
+		start = llen + start
+	}
+	if end < 0 {
+		end = llen + end
+	}
+	if start < 0 {
+		start = 0
+	}
+
+	/* Invariant: start >= 0, so this test will be true when end < 0.
+	 * The range is empty when start > end or start >= length. */
+	if start > end || start >= llen {
+		c.AddReply(REPLY_INVALID_VALUE)
+		return
+	}
+	if end >= llen {
+		end = llen - 1
+	}
+	rangeLen := start - end + 1
+	c.AddReplyInt(int(rangeLen))
+
+	ln := l.Index(start)
+	for rangeLen > 0 {
+		c.AddReplyStr(ln.Val)
+		ln = ln.next
+	}
+}
+
+var llenCommand CommandProc = func(c *GedisClient) {
+	lobj := LookupKey(c.args[1])
+
+	if lobj == nil {
+		c.AddReply(REPLY_NIL)
+		return
+	}
+	if lobj.Type_ != LIST {
+		c.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+	l := lobj.Val_.(*List)
+	c.AddReplyInt(l.Length())
+}
+
+var lremCommand CommandProc = func(c *GedisClient) {
+	lobj := LookupKey(c.args[1])
+
+	if lobj == nil {
+		c.AddReply(REPLY_NIL)
+		return
+	}
+	if lobj.Type_ != LIST {
+		c.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+	//l := lobj.Val_.(*List)
+
+	var toRemove int64
+	if GetNumber(c.args[2].StrVal(), &toRemove) != nil {
+		c.AddReply(REPLY_INVALID_VALUE)
+		return
+	}
+
 }
 
 var zaddCommand CommandProc = func(c *GedisClient) {

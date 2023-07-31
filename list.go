@@ -2,6 +2,11 @@ package main
 
 //  doubly linked list
 
+const (
+	LIST_HEAD = 1
+	LIST_TAIL = 2
+)
+
 type Node struct {
 	Val  *GObj
 	next *Node
@@ -98,6 +103,28 @@ func (list *List) DelNode(n *Node) {
 	list.length -= 1
 }
 
+// Index Return the element at the specified zero-based index
+// where 0 is the head, 1 is the element next to head and so on.
+// Negative integers are used in order to count from the tail,
+// -1 is the last element, -2 the penultimate and so on.
+// If the index is out of range nil is returned
+func (list *List) Index(index int64) *Node {
+	var n *Node
+	if index < 0 {
+		index = -index - 1
+		n = list.tail
+		for index > 0 && n != nil {
+			n = n.pre
+		}
+	} else {
+		n = list.tail
+		for index > 0 && n != nil {
+			n = n.next
+		}
+	}
+	return n
+}
+
 func (list *List) Delete(val *GObj) {
 	list.DelNode(list.Find(val))
 }
@@ -112,4 +139,23 @@ func (list *List) Last() *Node {
 
 func (list *List) Length() int {
 	return list.length
+}
+
+func (list *List) TypePush(obj *GObj, where int) {
+	if where == LIST_HEAD {
+		list.HeadPush(obj)
+	} else if where == LIST_TAIL {
+		list.TailPush(obj)
+	}
+}
+
+func (list *List) TypePop(where int) *GObj {
+	var ln *Node
+	if where == LIST_HEAD {
+		ln = list.First()
+	} else if where == LIST_TAIL {
+		ln = list.Last()
+	}
+	list.DelNode(ln)
+	return ln.Val
 }
