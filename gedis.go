@@ -255,15 +255,15 @@ var cmdTable = []GedisCommand{
 	{"expire", 3, expireCommand},
 	{"ttl", 2, ttlCommand},
 	{"pexpireat", 3, pexpireatCommand},
-	//TODO: list command
-	{"lpush", 3, nil},
-	{"rpush", 3, nil},
-	{"lpop", 3, nil},
-	{"rpop", 3, nil},
-	{"llen", 2, nil},
-	{"lindex", 3, nil},
-	{"lrange", 4, nil},
-	{"lrem", 4, nil},
+	/* list command */
+	{"lpush", 3, lpushCommand},
+	{"rpush", 3, rpushCommand},
+	{"lpop", 3, lpopCommand},
+	{"rpop", 3, rpopCommand},
+	{"llen", 2, llenCommand},
+	{"lindex", 3, lindexCommand},
+	{"lrange", 4, lrangeCommand},
+	{"lrem", 4, lremCommand},
 	//TODO: hash command
 	{"hget", 3, nil},
 	{"hset", 4, nil},
@@ -562,7 +562,7 @@ var lremCommand CommandProc = func(c *GedisClient) {
 		c.AddReply(REPLY_WRONG_TYPE)
 		return
 	}
-	//l := lobj.Val_.(*List)
+	l := lobj.Val_.(*List)
 
 	var toRemove int64
 	if GetNumber(c.args[2].StrVal(), &toRemove) != nil {
@@ -570,6 +570,59 @@ var lremCommand CommandProc = func(c *GedisClient) {
 		return
 	}
 
+	var li *ListIterator
+	if toRemove < 0 {
+		toRemove = -toRemove
+		li = l.TypeInitIterator(-1, LIST_HEAD)
+	} else {
+		li = l.TypeInitIterator(0, LIST_TAIL)
+	}
+
+	var entry *ListEntry
+	obj := c.args[3]
+	removed := int64(0)
+	for li.Next(entry) > 0 {
+		if EqualStr(entry.ln.Val, obj) {
+			l.DelNode(entry.ln)
+			removed++
+			if toRemove > 0 && removed == toRemove {
+				break
+			}
+		}
+	}
+
+	if l.Length() == 0 {
+		_ = server.db.data.Delete(c.args[1])
+	}
+
+	c.AddReplyInt(int(removed))
+}
+
+var lindexCommand CommandProc = func(c *GedisClient) {
+	key := c.args[1]
+	lobj := LookupKey(key)
+
+	if lobj == nil {
+		c.AddReply(REPLY_NIL)
+		return
+	}
+	if lobj.Type_ != LIST {
+		c.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+	var index *int64
+	if GetNumber(key.StrVal(), index) != nil {
+		c.AddReply(REPLY_INVALID_VALUE)
+		return
+	}
+	l := lobj.Val_.(*List)
+
+	ln := l.Index(*index)
+	if ln != nil {
+		c.AddReplyStr(ln.Val)
+	} else {
+		c.AddReply(REPLY_NIL)
+	}
 }
 
 var zaddCommand CommandProc = func(c *GedisClient) {

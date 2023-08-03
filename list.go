@@ -7,10 +7,10 @@ const (
 	LIST_TAIL = 2
 )
 
-type Node struct {
+type lNode struct {
 	Val  *GObj
-	next *Node
-	pre  *Node
+	next *lNode
+	pre  *lNode
 }
 
 type ListType struct {
@@ -19,9 +19,36 @@ type ListType struct {
 
 type List struct {
 	ListType
-	head   *Node
-	tail   *Node
+	head   *lNode
+	tail   *lNode
 	length int
+}
+
+type ListIterator struct {
+	direction int
+	ln        *lNode
+}
+
+type ListEntry struct {
+	li *ListIterator
+	ln *lNode
+}
+
+// Next Stores pointer to current the entry in the provided entry structure
+// and advances the position of the iterator.
+/* Returns 1 when the current entry is in fact an entry, 0 otherwise. */
+func (li *ListIterator) Next(entry *ListEntry) int {
+	entry.li = li
+	entry.ln = li.ln
+	if entry.ln != nil {
+		if li.direction == LIST_HEAD {
+			li.ln = li.ln.next
+		} else {
+			li.ln = li.ln.pre
+		}
+		return 1
+	}
+	return 0
 }
 
 func ListCreate(listType ListType) *List {
@@ -34,7 +61,7 @@ func ListCreate(listType ListType) *List {
 }
 
 // Find if not found return nil
-func (list *List) Find(val *GObj) *Node {
+func (list *List) Find(val *GObj) *lNode {
 	p := list.head
 	for p != nil {
 		if list.EqualFunc(p.Val, val) {
@@ -47,7 +74,7 @@ func (list *List) Find(val *GObj) *Node {
 
 // TailPush insert node at the tail
 func (list *List) TailPush(val *GObj) {
-	var n Node
+	var n lNode
 	n.Val = val
 	if list.head == nil {
 		list.head = &n
@@ -62,7 +89,7 @@ func (list *List) TailPush(val *GObj) {
 
 // HeadPush insert node at the head
 func (list *List) HeadPush(val *GObj) {
-	var n Node
+	var n lNode
 	n.Val = val
 	if list.head == nil {
 		list.head = &n
@@ -75,7 +102,7 @@ func (list *List) HeadPush(val *GObj) {
 	list.length += 1
 }
 
-func (list *List) DelNode(n *Node) {
+func (list *List) DelNode(n *lNode) {
 	if n == nil {
 		return
 	}
@@ -108,8 +135,8 @@ func (list *List) DelNode(n *Node) {
 // Negative integers are used in order to count from the tail,
 // -1 is the last element, -2 the penultimate and so on.
 // If the index is out of range nil is returned
-func (list *List) Index(index int64) *Node {
-	var n *Node
+func (list *List) Index(index int64) *lNode {
+	var n *lNode
 	if index < 0 {
 		index = -index - 1
 		n = list.tail
@@ -129,11 +156,11 @@ func (list *List) Delete(val *GObj) {
 	list.DelNode(list.Find(val))
 }
 
-func (list *List) First() *Node {
+func (list *List) First() *lNode {
 	return list.head
 }
 
-func (list *List) Last() *Node {
+func (list *List) Last() *lNode {
 	return list.tail
 }
 
@@ -150,7 +177,7 @@ func (list *List) TypePush(obj *GObj, where int) {
 }
 
 func (list *List) TypePop(where int) *GObj {
-	var ln *Node
+	var ln *lNode
 	if where == LIST_HEAD {
 		ln = list.First()
 	} else if where == LIST_TAIL {
@@ -158,4 +185,10 @@ func (list *List) TypePop(where int) *GObj {
 	}
 	list.DelNode(ln)
 	return ln.Val
+}
+
+func (list *List) TypeInitIterator(index int64, direction int) *ListIterator {
+	li := &ListIterator{direction: direction}
+	li.ln = list.Index(index)
+	return li
 }
