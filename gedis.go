@@ -275,11 +275,9 @@ var cmdTable = []GedisCommand{
 	{"zrem", 3, zremCommand},
 	{"zrange", 4, zrangeCommand},
 	{"zrevrange", 4, zrevrangeCommand},
-	/* TODO:bitmap command */
-	{"setbit", 4, nil},
-	{"getbit", 3, nil},
-	{"bitop", 4, nil},
-	{"bitcount", 2, nil},
+	/* bitmap command */
+	{"setbit", 4, setbitCommand},
+	{"getbit", 3, getbitCommand},
 }
 
 //get a string
