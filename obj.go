@@ -6,7 +6,7 @@ type GVal any
 const (
 	STR    GType = 1
 	LIST   GType = 2
-	SET    GType = 3
+	DICT   GType = 3
 	ZSET   GType = 4
 	BITMAP GType = 5
 )

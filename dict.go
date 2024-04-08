@@ -412,3 +412,13 @@ func (dict *Dict) GetRandomKey() *Entry {
 	}
 	return he
 }
+
+var hsetCommand CommandProc = func(c *GedisClient) {
+	hobj := LookupKey(c.args[1])
+
+	if hobj != nil && hobj.Type_ != DICT {
+		c.AddReply(REPLY_WRONG_TYPE)
+		return
+	}
+
+}

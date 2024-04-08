@@ -342,7 +342,7 @@ func zrangeGenericCommand(c *GedisClient, reverse int) {
 
 func zaddGenericCommand(c *GedisClient, incr int) {
 	// The score-member parameter must be in pairs
-	if len(c.args)%2 == 0 {
+	if len(c.args)%2 != 0 {
 		c.AddReply(REPLY_WRONG_ARITY)
 		return
 	}

@@ -198,7 +198,7 @@ func (list *List) TypeInitIterator(index int64, direction int) *ListIterator {
 func pushGenericCommand(c *GedisClient, where int) {
 	lobj := LookupKey(c.args[1])
 
-	if lobj != nil || lobj.Type_ != LIST {
+	if lobj != nil && lobj.Type_ != LIST {
 		c.AddReply(REPLY_WRONG_TYPE)
 		return
 	}
