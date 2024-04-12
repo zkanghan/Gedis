@@ -142,11 +142,13 @@ func (list *List) Index(index int64) *lNode {
 		n = list.tail
 		for index > 0 && n != nil {
 			n = n.pre
+			index--
 		}
 	} else {
-		n = list.tail
+		n = list.head
 		for index > 0 && n != nil {
 			n = n.next
+			index--
 		}
 	}
 	return n
@@ -292,13 +294,13 @@ var lrangeCommand CommandProc = func(c *GedisClient) {
 	if end >= llen {
 		end = llen - 1
 	}
-	rangeLen := start - end + 1
-	c.AddReplyInt(int(rangeLen))
+	rangeLen := end - start + 1
 
 	ln := l.Index(start)
 	for rangeLen > 0 {
 		c.AddReplyStr(ln.Val)
 		ln = ln.next
+		rangeLen--
 	}
 }
 
@@ -376,14 +378,14 @@ var lindexCommand CommandProc = func(c *GedisClient) {
 		c.AddReply(REPLY_WRONG_TYPE)
 		return
 	}
-	var index *int64
-	if GetNumber(key.StrVal(), index) != nil {
+	var index int64
+	if GetNumber(key.StrVal(), &index) != nil {
 		c.AddReply(REPLY_INVALID_VALUE)
 		return
 	}
 	l := lobj.Val_.(*List)
 
-	ln := l.Index(*index)
+	ln := l.Index(index)
 	if ln != nil {
 		c.AddReplyStr(ln.Val)
 	} else {
